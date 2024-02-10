@@ -5,48 +5,20 @@
 #include <tlhelp32.h>
 #include "resource.h"
 
-#define LDE_X86 0
-
-//#ifdef _DEBUG
+#ifdef _DEBUG
 #define LOGGING
-//#endif
+#endif
 
 #ifdef __cplusplus
 extern "C"
 #endif
 int __stdcall LDE(void* address , DWORD type);
 
+#ifdef _DEBUG
 BOOL AlwaysCreateDLLs = TRUE;
-
-/*
-https://github.com/BeaEngine/lde64
-void SetupHook(char *module, char *name_export, void *Hook_func, void *trampo, DWORD addr)
-{
-	DWORD	OldProtect;
-	DWORD	len;
-	FARPROC	Proc;
-
-	if (addr != 0)
-	{
-		Proc = (FARPROC)addr;
-	}
-	else
-	{
-		Proc = GetProcAddress(GetModuleHandleA(module), name_export);
-		if (!Proc)
-		    return;
-	}
-	len = 0;
-	while (len < 5)
-		len += LDE((BYTE*)Proc + len , LDE_X86);
-	memcpy(trampo, Proc, len);
-	*(BYTE *)((BYTE*)trampo + len) = 0xE9;
-	*(DWORD *)((BYTE*)trampo + len + 1) = (BYTE*)Proc - (BYTE*)trampo - 5;
-	VirtualProtect(Proc, len, PAGE_EXECUTE_READWRITE, &OldProtect);
-	*(BYTE*)Proc = 0xE9;
-	*(DWORD*)((char*)Proc + 1) = (BYTE*)Hook_func - (BYTE*)Proc - 5;
-	VirtualProtect(Proc, len, OldProtect, &OldProtect);
-}*/
+#else
+BOOL AlwaysCreateDLLs = FALSE;
+#endif
 
 void exitlog(const char* fmt, ...)
 {
@@ -298,7 +270,7 @@ int main(int argc, char *argv[])
 			if (i != argc-1)
 				strcat(szPathBuffer, " ");
 		}
-		char *szPath = szPathBuffer;
+		szPath = szPathBuffer;
 	}
 #endif
 
@@ -306,6 +278,9 @@ int main(int argc, char *argv[])
 
 	char *szExePath = szPath;
 	char *szExePart = strstr(szExePath, ".exe");
+
+	log("szExePart: %s\n", szExePart);
+
 	if (szExePart)
 	{
 		szExePath = strdup(szExePath);
@@ -318,6 +293,10 @@ int main(int argc, char *argv[])
 	}
 
 	SetCurrentDirectoryFromPath(szPath);
+
+	char szCurDir[MAX_PATH];
+	if (GetCurrentDirectory(MAX_PATH, szCurDir))
+		log("Current Directory: %s\n", szCurDir);
 
 	// "C:\\games\\Football Manager 2005"
 	const char *lpApplicationName = szPath;
