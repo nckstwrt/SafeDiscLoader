@@ -5,7 +5,7 @@
 [Releases](https://github.com/nckstwrt/SafeDiscLoader/releases)
 
 # Usage
-SafeDiscLoader is a single executable and be used in the following ways to run SafeDisc protected games:
+SafeDiscLoader is a single executable and can be used in the following ways to run SafeDisc protected games:
 
 ### Just Double-Click
 From here a window will appear allowing you to select your SafeDisc.exe
