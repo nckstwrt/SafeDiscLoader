@@ -20,6 +20,29 @@ BOOL AlwaysCreateDLLs = TRUE;
 BOOL AlwaysCreateDLLs = FALSE;
 #endif
 
+BOOL bMovedDrvMgt = FALSE;
+char szSystemDrvMgtPath[MAX_PATH];
+
+void log(const char* fmt, ...)
+{
+	va_list va;
+    va_start(va, fmt);
+    vfprintf(stdout, fmt, va);
+    va_end(va);
+}
+
+void PutBackSafeDiscShim()
+{
+	if (bMovedDrvMgt)
+	{
+		char szSrcPath[MAX_PATH];
+		sprintf(szSrcPath, "%s%s", szSystemDrvMgtPath, ".disable");
+		if (!MoveFile(szSrcPath, szSystemDrvMgtPath))
+			log("Unable to put back SafeDiscShim!\r\n");
+		bMovedDrvMgt = FALSE;
+	}
+}
+
 void exitlog(const char* fmt, ...)
 {
 	va_list va;
@@ -36,15 +59,9 @@ void exitlog(const char* fmt, ...)
 #ifdef _DEBUG
 	getch();
 #endif
-	exit(-1);
-}
 
-void log(const char* fmt, ...)
-{
-	va_list va;
-    va_start(va, fmt);
-    vfprintf(stdout, fmt, va);
-    va_end(va);
+	PutBackSafeDiscShim();
+	exit(-1);
 }
 
 void LoadResource(DWORD ResID, BYTE **pBuf, DWORD *pSize)
@@ -203,6 +220,28 @@ void SetCurrentDirectoryFromPath(const char *szPath)
 int main(int argc, char *argv[])
 {
 	BOOL bSuccess = TRUE;
+
+	// Check for SafeDiscShim
+	if (GetSystemDirectory(szSystemDrvMgtPath, MAX_PATH))
+	{
+		log("System Directory: %s\n", szSystemDrvMgtPath);
+		strcat(szSystemDrvMgtPath, "\\drvmgt.dll");
+		if (GetFileAttributes(szSystemDrvMgtPath) != -1L)
+		{
+			// Screw asking - gets annoying
+			// if (::MessageBox(NULL, "SafeDiscShim Detected!\r\nPlease remove or disable before continuing.\r\n\r\nWould you like to temporarily disable SafeDiscShim?", "SafeDiscLoader", MB_ICONERROR | MB_YESNOCANCEL) == IDYES)
+			{
+				char szDestPath[MAX_PATH];
+				sprintf(szDestPath, "%s%s", szSystemDrvMgtPath, ".disable");
+				if (!MoveFile(szSystemDrvMgtPath, szDestPath))
+					exitlog("Unable to disable SafeDiscShim!\r\n");
+				else
+					bMovedDrvMgt = TRUE;
+			}
+			//else
+			//	exit(-1);
+		}
+	}
 
 	byte_402009 = byte_402000 + 9;
 	sub_401000();
@@ -459,6 +498,7 @@ int main(int argc, char *argv[])
 	if (!bSuccess)
 		exitlog("Failed to start at OEP!\n");
 
+	PutBackSafeDiscShim();
 	return 0;
 }
 
