@@ -75,8 +75,9 @@ void LoadResource(DWORD ResID, BYTE **pBuf, DWORD *pSize)
     *pBuf = (BYTE *)LockResource(myResourceData);
 }
 
-int InjectDrvMgt(HANDLE hProcess, DWORD pid)
+int InjectDrvMgt(DWORD pid)
 {
+	HANDLE hProcess;
 	char szSecDrvEmuDLLPath[MAX_PATH];
 	GetTempPath(MAX_PATH, szSecDrvEmuDLLPath);
 	strcat(szSecDrvEmuDLLPath, "secdrvemu.dll");
@@ -139,6 +140,29 @@ int InjectDrvMgt(HANDLE hProcess, DWORD pid)
 	return 0;
 }
 
+void InjectAndHope(const char *lpApplicationName)
+{
+	if (MessageBox(NULL, "This does not appear to be a SafeDisc 2.9 or higher executable!\r\n\r\nInject SecDrvEmu.dll Emulation and hope for the best anyway?", "SafeDiscLoader", MB_ICONQUESTION | MB_YESNOCANCEL) == IDYES)
+	{
+		STARTUPINFO StartupInfo = { 0 };
+		PROCESS_INFORMATION pi = { 0 };
+		StartupInfo.cb = sizeof(STARTUPINFO);
+
+		log("lpApplicationName: %s\n", lpApplicationName);
+		BOOL bSuccess = CreateProcessA(NULL, (char*)lpApplicationName, 0, 0, 0, CREATE_SUSPENDED, 0, 0, &StartupInfo, &pi);
+		if (!bSuccess)
+			exitlog("Failed to CreateProcess: %s\r\n(ErrCode: %d)\n", lpApplicationName, GetLastError());
+
+		InjectDrvMgt(pi.dwProcessId);
+
+		ResumeThread(pi.hThread);
+
+		PutBackSafeDiscShim();
+		exit(0);
+	}
+	else
+		exit(-1);
+}
 
 HANDLE hProcess;
 
@@ -377,16 +401,19 @@ int main(int argc, char *argv[])
 	ebx -= 4;
 	if (*(WORD*)esi != 23117)
 	{
-		exitlog("This is not a valid SafeDisc file\n");
+		InjectAndHope(lpApplicationName);
+		//exitlog("This is not a valid SafeDisc file\n");
 	}
 	esi = (DWORD*)(((BYTE*)esi) + esi[15]);//*(DWORD*)(((BYTE *)esi)+0x3c);
 	if (esi > ebx)
 	{
-		exitlog("This is not a valid SafeDisc file\n");
+		InjectAndHope(lpApplicationName);
+		//exitlog("This is not a valid SafeDisc file\n");
 	}
 	if (*esi != 17744)
 	{
-		exitlog("This is not a valid SafeDisc file\n");
+		InjectAndHope(lpApplicationName);
+		//exitlog("This is not a valid SafeDisc file\n");
 	}
 
 	DWORD *v3 = esi;
@@ -408,7 +435,9 @@ int main(int argc, char *argv[])
 	ReadProcessMemory(hProcess, (char *)lpAddress - 4, &dword_402253, 4, 0);
 	if ( dword_402253 != 1887007348 )
 	{
-		exitlog("This is not a valid SafeDisc file\n");
+		TerminateProcess(hProcess, -1);
+		InjectAndHope(lpApplicationName);
+		//exitlog("This is not a valid SafeDisc file\n");
 	}
 
 	ReadProcessMemory(hProcess, (char *)lpAddress + 187, &dword_402253, 4, 0);
@@ -416,8 +445,9 @@ int main(int argc, char *argv[])
 	{
 		if ( *(((BYTE*)&dword_402253)+2) != 0xE9 )
 		{
-			exitlog("This is not a valid SafeDisc file\n");
-			
+			TerminateProcess(hProcess, -1);
+			InjectAndHope(lpApplicationName);
+			//exitlog("This is not a valid SafeDisc file\n");
 		}
 		dword_4021BC = 189;
 	}
@@ -431,7 +461,7 @@ int main(int argc, char *argv[])
 	DWORD flOldProtect;
 	BYTE unk_40209B[0x9b] = { 0 };		// 0x9b = 155
 
-	InjectDrvMgt(pi.hProcess, pi.dwProcessId);
+	InjectDrvMgt(pi.dwProcessId);
 
 	bSuccess = VirtualProtectEx(pi.hProcess, lpAddress, 0x9B, 0x40, &flOldProtect);
 	bSuccess = ReadProcessMemory(pi.hProcess, lpAddress, &unk_40209B, 0x9B, 0);

@@ -8,7 +8,9 @@
 #define STATUS_SUCCESS                   ((NTSTATUS)0x00000000L)    // ntsubauth
 #define STATUS_UNSUCCESSFUL              ((NTSTATUS)0xC0000001L)
 
-//#define LOGGING
+#ifdef _DEBUG
+#define LOGGING
+#endif
 
 HMODULE hOurModule;
 FILE* log_file = NULL;
@@ -24,11 +26,15 @@ void logprintf(const char* fmt, ...)
 		va_end(va);
 		fflush(log_file);
 	}
-    va_start(va, fmt);
-    vfprintf(stdout, fmt, va);
-    va_end(va);
+	if (stdout)
+	{
+		va_start(va, fmt);
+		vfprintf(stdout, fmt, va);
+		va_end(va);
+	}
 #endif
 }
+
 
 static unsigned int ioctlCodeMain = 0xef002407;
 BOOL ProcessMainIoctl(LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer, DWORD nOutBufferSize);
@@ -215,11 +221,27 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
         return 0;
     }
 
+
+	/*
+	HMODULE hKernel = LoadLibrary("KERNEL32.DLL");
+	void *ptrCreateFileA = NULL;
+	if (hKernel != NULL)
+	{
+		ptrCreateFileA = GetProcAddress(hKernel, "CreateFileA");
+		logprintf("ptrCreateFileA: %X\n", (DWORD)ptrCreateFileA);
+	}
+	else
+		logprintf("Failed to LoadLibrary!\n");
+	// FreeLibrary
+
+	if (MH_CreateHook(ptrCreateFileA, &CreateFileA_Hook, (LPVOID*)(&CreateFileA_Orig)) != MH_OK) */
     if (MH_CreateHookApi(L"kernel32", "CreateFileA", &CreateFileA_Hook, reinterpret_cast<LPVOID*>(&CreateFileA_Orig)) != MH_OK) 
     {
         logprintf("Unable to hook CreateFileA\n");
         return false;
     }
+
+	logprintf("CreateFileA_Orig = %X\n", (DWORD)*(LPVOID*)(&CreateFileA_Orig));
 	
 	if (MH_CreateHookApi(L"kernel32", "CreateProcessA", &CreateProcessA_Hook, reinterpret_cast<LPVOID*>(&CreateProcessA_Orig)) != MH_OK) 
     {
@@ -249,7 +271,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call)  
     {
     case DLL_PROCESS_ATTACH:
-        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)HookThread, hModule, 0, NULL);
+        //CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)HookThread, hModule, 0, NULL);
+		HookThread(hModule);
+		break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
     case DLL_PROCESS_DETACH:

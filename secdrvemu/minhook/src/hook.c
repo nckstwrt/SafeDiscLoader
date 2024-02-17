@@ -29,6 +29,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <limits.h>
+#include <stdio.h>
 
 #include "../include/MinHook.h"
 #include "buffer.h"
@@ -589,9 +590,13 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
             if (pos == INVALID_HOOK_POS)
             {
                 LPVOID pBuffer = AllocateBuffer(pTarget);
+
+				printf("Buffer in MH_CreateHook = %X\n", (DWORD)pBuffer);
+
                 if (pBuffer != NULL)
                 {
                     TRAMPOLINE ct;
+					memset(&ct, 0, sizeof(TRAMPOLINE));
 
                     ct.pTarget     = pTarget;
                     ct.pDetour     = pDetour;
