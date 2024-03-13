@@ -455,7 +455,7 @@ static MH_STATUS EnableAllHooksLL(BOOL enable)
 
     if (first != INVALID_HOOK_POS)
     {
-        FROZEN_THREADS threads;
+        //FROZEN_THREADS threads;
         //status = Freeze(&threads, ALL_HOOKS_POS, enable ? ACTION_ENABLE : ACTION_DISABLE);
         if (status == MH_OK)
         {

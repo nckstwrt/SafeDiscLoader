@@ -261,11 +261,11 @@ int main(int argc, char *argv[])
 
 #ifdef _DEBUG
 	//char *szPath = "C:\\Program Files (x86)\\EA GAMES\\The Sims 2\\TSBin\\Sims2.exe -w";
-	//char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
+	char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
 	//char *szPath = "C:\\Games\\Call of Duty 4 - Modern Warfare\\iw3sp.exe";
 	//char *szPath = "C:\\Games\\BF1942\\BF1942.exe";
 	//char *szPath = "C:\\Games\\HPCOS\\System\\Game.Exe";
-	char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
+	//char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
 	//char *szPath = "C:\\Games\\Nightfire\\Bond.exe";
 	//char *szPath = "C:\\Games\\Mafia\\Game.exe";
 	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed_Orig.exe";

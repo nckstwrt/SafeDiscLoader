@@ -727,7 +727,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call)  
     {
     case DLL_PROCESS_ATTACH:
-        //CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)HookThread, hModule, 0, NULL);
 		HookThread(hModule);
 		break;
     case DLL_THREAD_ATTACH:
