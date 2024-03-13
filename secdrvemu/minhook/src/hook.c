@@ -456,7 +456,7 @@ static MH_STATUS EnableAllHooksLL(BOOL enable)
     if (first != INVALID_HOOK_POS)
     {
         FROZEN_THREADS threads;
-        status = Freeze(&threads, ALL_HOOKS_POS, enable ? ACTION_ENABLE : ACTION_DISABLE);
+        //status = Freeze(&threads, ALL_HOOKS_POS, enable ? ACTION_ENABLE : ACTION_DISABLE);
         if (status == MH_OK)
         {
             for (i = first; i < g_hooks.size; ++i)
@@ -469,7 +469,7 @@ static MH_STATUS EnableAllHooksLL(BOOL enable)
                 }
             }
 
-            Unfreeze(&threads);
+          //  Unfreeze(&threads);
         }
     }
 
@@ -590,8 +590,6 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
             if (pos == INVALID_HOOK_POS)
             {
                 LPVOID pBuffer = AllocateBuffer(pTarget);
-
-				printf("Buffer in MH_CreateHook = %X\n", (DWORD)pBuffer);
 
                 if (pBuffer != NULL)
                 {

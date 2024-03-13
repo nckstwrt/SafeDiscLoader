@@ -1,18 +1,15 @@
+#ifdef _DEBUG
+#define LOGGING
+#endif
+
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <conio.h>
 #include <tlhelp32.h>
 #include "resource.h"
-
-#ifdef _DEBUG
-#define LOGGING
-#endif
-
-#ifdef __cplusplus
-extern "C"
-#endif
-int __stdcall LDE(void* address , DWORD type);
+#include "secdrvemu/CStringPort.h"
+#include "secdrvemu/Utils.h"
 
 #ifdef _DEBUG
 BOOL AlwaysCreateDLLs = TRUE;
@@ -22,14 +19,6 @@ BOOL AlwaysCreateDLLs = FALSE;
 
 BOOL bMovedDrvMgt = FALSE;
 char szSystemDrvMgtPath[MAX_PATH];
-
-void log(const char* fmt, ...)
-{
-	va_list va;
-    va_start(va, fmt);
-    vfprintf(stdout, fmt, va);
-    va_end(va);
-}
 
 void PutBackSafeDiscShim()
 {
@@ -140,9 +129,9 @@ int InjectDrvMgt(DWORD pid)
 	return 0;
 }
 
-void InjectAndHope(const char *lpApplicationName)
+void InjectAndHope(const char *lpApplicationName, bool bShowPopUp = true)
 {
-	if (MessageBox(NULL, "This does not appear to be a SafeDisc 2.9 or higher executable!\r\n\r\nInject SecDrvEmu.dll Emulation and hope for the best anyway?", "SafeDiscLoader", MB_ICONQUESTION | MB_YESNOCANCEL) == IDYES)
+	if (!bShowPopUp || MessageBox(NULL, "This does not appear to be a SafeDisc 2.7 or higher executable!\r\n\r\nInject SecDrvEmu.dll Emulation and hope for the best anyway?", "SafeDiscLoader", MB_ICONQUESTION | MB_YESNOCANCEL) == IDYES)
 	{
 		STARTUPINFO StartupInfo = { 0 };
 		PROCESS_INFORMATION pi = { 0 };
@@ -270,11 +259,20 @@ int main(int argc, char *argv[])
 	byte_402009 = byte_402000 + 9;
 	sub_401000();
 
+#ifdef _DEBUG
 	//char *szPath = "C:\\Program Files (x86)\\EA GAMES\\The Sims 2\\TSBin\\Sims2.exe -w";
 	//char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
 	//char *szPath = "C:\\Games\\Call of Duty 4 - Modern Warfare\\iw3sp.exe";
-#ifdef _DEBUG
-	char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
+	//char *szPath = "C:\\Games\\BF1942\\BF1942.exe";
+	//char *szPath = "C:\\Games\\HPCOS\\System\\Game.Exe";
+	char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
+	//char *szPath = "C:\\Games\\Nightfire\\Bond.exe";
+	//char *szPath = "C:\\Games\\Mafia\\Game.exe";
+	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed_Orig.exe";
+	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed.exe";
+	//char *szPath = "F:\\Games\\Harry Potter and the Chamber of Secrets\\system\\Game.exe";
+	//char *szPath = "C:\\Games\\Madden NFL 2003\\mainapp.exe";
+	//char *szPath = "C:\\Games\\Hitman - Codename 47\\Hitman.exe";
 #else
 	char szPathBuffer[MAX_PATH];
 	char *szPath = NULL;
@@ -340,15 +338,18 @@ int main(int argc, char *argv[])
 	log("szPath: %s\n", szPath);
 
 	char *szExePath = szPath;
-	char *szExePart = strstr(szExePath, ".exe");
 
-	log("szExePart: %s\n", szExePart);
+	CStringPort szExePart = szExePath;
+	int exe_idx = szExePart.MakeLower().Find(".exe");
 
-	if (szExePart)
+	if (exe_idx != -1)
 	{
+		// duplicate cut off after the .exe part (so any params etc are removed 
+		// soit's just a path to the exe
 		szExePath = strdup(szExePath);
-		strstr(szExePath, ".exe")[4] = 0;
+		szExePath[exe_idx+4] = 0;
 
+		// Cut off any quotation marks
 		if (szExePath[0] == '\"')
 			szExePath++;
 		if (szExePath[strlen(szExePath)-1] == '\"')
@@ -361,7 +362,6 @@ int main(int argc, char *argv[])
 	if (GetCurrentDirectory(MAX_PATH, szCurDir))
 		log("Current Directory: %s\n", szCurDir);
 
-	// "C:\\games\\Football Manager 2005"
 	const char *lpApplicationName = szPath;
 
 	HANDLE hFile = CreateFile(szExePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
@@ -394,6 +394,15 @@ int main(int argc, char *argv[])
 		exitlog("Could not read entire file\n");
 	}
 
+	DWORD SafeDiscVersion, SafeDiscSubVersion, SafeDiscRevision;
+	if (GetSafeDiscVersionFromBuffer((BYTE*)v2, NumberOfBytesRead, &SafeDiscVersion, &SafeDiscSubVersion, &SafeDiscRevision))
+	{
+		if (SafeDiscVersion == 2 && SafeDiscSubVersion < 90 && SafeDiscSubVersion >= 70)
+		{
+			log("SafeDisc Version 2.7 or 2.8! Doing our own loader!\n");
+			InjectAndHope(lpApplicationName, false);
+		}
+	}
 	
 	DWORD *esi = dword_4029AC;
 	DWORD *ebx = esi;
@@ -402,18 +411,15 @@ int main(int argc, char *argv[])
 	if (*(WORD*)esi != 23117)
 	{
 		InjectAndHope(lpApplicationName);
-		//exitlog("This is not a valid SafeDisc file\n");
 	}
-	esi = (DWORD*)(((BYTE*)esi) + esi[15]);//*(DWORD*)(((BYTE *)esi)+0x3c);
+	esi = (DWORD*)(((BYTE*)esi) + esi[15]);
 	if (esi > ebx)
 	{
 		InjectAndHope(lpApplicationName);
-		//exitlog("This is not a valid SafeDisc file\n");
 	}
 	if (*esi != 17744)
 	{
 		InjectAndHope(lpApplicationName);
-		//exitlog("This is not a valid SafeDisc file\n");
 	}
 
 	DWORD *v3 = esi;
@@ -437,7 +443,6 @@ int main(int argc, char *argv[])
 	{
 		TerminateProcess(hProcess, -1);
 		InjectAndHope(lpApplicationName);
-		//exitlog("This is not a valid SafeDisc file\n");
 	}
 
 	ReadProcessMemory(hProcess, (char *)lpAddress + 187, &dword_402253, 4, 0);
@@ -447,12 +452,24 @@ int main(int argc, char *argv[])
 		{
 			TerminateProcess(hProcess, -1);
 			InjectAndHope(lpApplicationName);
-			//exitlog("This is not a valid SafeDisc file\n");
 		}
 		dword_4021BC = 189;
 	}
 
-	sub_401026((BYTE)dword_4021BC, 0, 0, 1, 1);		/// This sets the modes for SDLoader.dll - all 1s is debug stop at OEP. Normal is 0,0,1,1
+	/*
+	  Hook JMP-OEP:             disabled
+	  Logging:                  enabled
+	  CD-Check function skip:   enabled
+	  Alternative Key Finding:  enabled
+    */
+#ifdef _DEBUG
+	BOOL LOG_SD_LOADER = TRUE;
+#else
+	BOOL LOG_SD_LOADER = FALSE;
+#endif
+
+
+	sub_401026((BYTE)dword_4021BC, 0, LOG_SD_LOADER, 1, 1);		/// This sets the modes for SDLoader.dll - all 1s is debug stop at OEP. Normal is 0,0,1,1
 
 
 	*(DWORD*)(byte_402000 + 0x97) = (DWORD)LoadLibraryA;

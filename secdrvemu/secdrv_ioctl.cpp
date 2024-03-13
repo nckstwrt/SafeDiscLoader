@@ -1,6 +1,6 @@
 #include <windows.h>
 
-void logprintf(const char* fmt, ...);
+void log(const char* fmt, ...);
 
 static unsigned int ioctlCodeMain = 0xef002407;
 
@@ -62,30 +62,30 @@ BOOL ProcessMainIoctl(LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer
 {
     // make sure buffers are actually pointing to memory
     if (!lpInBuffer || !lpOutBuffer) {
-        logprintf("invalid ioctl buffers: lpInBuffer %X, lpOutBuffer %X", reinterpret_cast<int>(lpInBuffer), reinterpret_cast<int>(lpOutBuffer));
+        log("invalid ioctl buffers: lpInBuffer %X, lpOutBuffer %X", reinterpret_cast<int>(lpInBuffer), reinterpret_cast<int>(lpOutBuffer));
         return FALSE;
     }
 
     if (nInBufferSize != sizeof(MainIoctlInBuffer)) {
-        logprintf("invalid ioctl in-buffer size: %X", nInBufferSize);
+        log("invalid ioctl in-buffer size: %X", nInBufferSize);
         return FALSE;
     }
-    logprintf("ioctl in-buffer size: %X\n", nInBufferSize);
+    //log("ioctl in-buffer size: %X\n", nInBufferSize);
 
     /* later versions report a buffer size of 0xC18 for some reason, though it is
      * never read from or written to outside of the normal size */
     if (nOutBufferSize != sizeof(MainIoctlOutBuffer)
         && nOutBufferSize != 0xC18) {
-        logprintf("invalid ioctl out-buffer size: %X\n", nOutBufferSize);
+        log("invalid ioctl out-buffer size: %X\n", nOutBufferSize);
         return FALSE;
     }
-    logprintf("ioctl out-buffer size: %X\n", nOutBufferSize);
+    //log("ioctl out-buffer size: %X\n", nOutBufferSize);
 
     MainIoctlInBuffer* inBuffer = static_cast<MainIoctlInBuffer*>(lpInBuffer);
     MainIoctlOutBuffer* outBuffer = static_cast<MainIoctlOutBuffer*>(lpOutBuffer);
 
     if (!hasLoggedVersion) {
-        logprintf("SafeDisc ioctl version %d.%d.%d detected.\n", inBuffer->VersionMajor, inBuffer->VersionMinor, inBuffer->VersionPatch);
+        log("SafeDisc ioctl version %d.%d.%d detected.\n", inBuffer->VersionMajor, inBuffer->VersionMinor, inBuffer->VersionPatch);
         hasLoggedVersion = true;
     }
 
@@ -99,29 +99,29 @@ BOOL ProcessMainIoctl(LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer
      * perform more checks */
     switch (inBuffer->Command) {
     case GetDebugRegisterInfo:
-        logprintf("command GetDebugRegisterInfo called\n");
+        log("command GetDebugRegisterInfo called\n");
         outBuffer->ExtraDataSize = 4;
         outBuffer->ExtraData[0] = 0x400;
         break;
     case GetIdtInfo:
-        logprintf("command GetIdtInfo called\n");
+        log("command GetIdtInfo called\n");
         outBuffer->ExtraDataSize = 4;
         outBuffer->ExtraData[0] = 0x2C8;
         break;
     case SetupVerification:
-        logprintf("command SetupVerification called\n");
+        log("command SetupVerification called\n");
         outBuffer->ExtraDataSize = 4;
         outBuffer->ExtraData[0] = 0x5278d11b;
         break;
     case Command3Fh:
-        logprintf("command 3Fh called\n");
+        //log("command 3Fh called\n");
         if (nOutBufferSize != 0xC18 ||
             inBuffer->ExtraData[0] > 0x60) return FALSE;
         outBuffer->ExtraDataSize = 4;
         outBuffer->ExtraData[0] = 0;
         break;
     case Command40h:
-        logprintf("command 40h called\n");
+        //log("command 40h called\n");
         if (nOutBufferSize != 0xC18 ||
             !inBuffer->ExtraData[0] ||
             !inBuffer->ExtraData[1]) return FALSE;
@@ -132,13 +132,13 @@ BOOL ProcessMainIoctl(LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer
             outBuffer->ExtraData[0] = 0x587C1284;
         break;
     case Command41h:
-        logprintf("command 41h called\n");
+        //log("command 41h called\n");
         if (nOutBufferSize != 0xC18 ||
             !LOBYTE(inBuffer->ExtraData[0])) return FALSE;
         outBuffer->ExtraDataSize = 4;
         break;
     case Command42h:
-        logprintf("command 42h called\n");
+        //log("command 42h called\n");
         return FALSE;
     case Command43h:
         if (inBuffer->ExtraData[0] != 0x98A64100 ||
@@ -148,7 +148,7 @@ BOOL ProcessMainIoctl(LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer
         outBuffer->ExtraData[0] = 0;
         break;
     default:
-        logprintf("unhandled ioctl command: %X\n", static_cast<DWORD>(inBuffer->Command));
+        log("unhandled ioctl command: %X\n", static_cast<DWORD>(inBuffer->Command));
         return FALSE;
     }
 
