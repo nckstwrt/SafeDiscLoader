@@ -1,0 +1,1264 @@
+SafeDisc 3.20 - 4.00
+
+
+If you ever played games in your life, then you for sure know what is SafeDisc. SafeDisc is one of the today most used CD protections. In a previous tutorial we met SafeDisc "small brother" - SafeCast. SafeDisc is product of the same company and it is almost indentical as SafeCast. Main difference is that SafeDisc checks for bad sectors on the CD to be sure that program is running from original one. Bad sectors cannot be copied to another CD. Well it shouldn't be, but programs like Alcohol 120% and similar can do that. It also depends of SafeDisc version. I'm not quite sure about that, copying CDs doesn't interest me. Removing protection layer is objective of this tutorial. For this tutorial you need original CD and Windows XP.
+
+
+
+
+1. Introduction to SafeDisc
+
+
+Target for this tutorial is "Need For Speed Underground 2", protected probably with some version in range from 3.20 up to 4.00. It is not possible to detect exact version because SafeCast above 3.20 have erased version numbers. PEiD fails to detect protection at all, but Protection_ID v5.1f gives solid information:
+
+Scanning -> C:Need for Speed Underground 2speed2.exe
+File Type : Exe, Size : 5987981 (05B5E8Dh) Bytes
+-> File has 1166989 (011CE8Dh) bytes of appended data starting at offset 0499000h
+[!] Safedisc v3.20 - v4.xx or newer [removed version] detected !
+[!] removed version is Safedisc v4.00.000 - v4.00.003
+[!] Possible CD/DVD-Check String -> Please insert
+- Scan Took : 1.938 Seconds
+
+
+Protection in this version of SafeDisc consits from:
+
+[1] CD check - bad sectors, we have original CD so this is not problem for unpacking.
+[2] Debugger checks - easy to defeat, same as in SafeCast.
+[3] Import protection - same as in SafeCast, requires little work but it is not hard.
+[4] Emulated opcodes - again, same as in SafeCast.
+[5] DebugBlocker and nanomites - the hardest part of protection.
+
+
+2. OEP, debugger checks and SafeDisc debugger
+
+It is very easy to find whre OEP should be. We open protected file in Olly and we can spot OEP jump:
+
+0093309E > 55 PUSH EBP
+0093309F 8BEC MOV EBP,ESP
+009330A1 60 PUSHAD
+009330A2 BB 9E309300 MOV EBX,speed2.<ModuleEntryPoint>
+009330A7 33C9 XOR ECX,ECX
+009330A9 8A0D 3D309300 MOV CL,BYTE PTR DS:[93303D]
+009330AF 85C9 TEST ECX,ECX
+009330B1 74 0C JE SHORT speed2.009330BF
+009330B3 B8 13319300 MOV EAX,speed2.00933113
+009330B8 2BC3 SUB EAX,EBX
+009330BA 83E8 05 SUB EAX,5
+009330BD EB 0E JMP SHORT speed2.009330CD
+009330BF 51 PUSH ECX
+...
+...
+00933146 8B40 04 MOV EAX,DWORD PTR DS:[EAX+4]
+00933149 FFD0 CALL EAX
+0093314B 58 POP EAX ; kernel32.7C816D4F
+0093314C FF35 53319300 PUSH DWORD PTR DS:[933153]
+00933152 C3 RETN
+00933153 72 16 JB SHORT speed2.0093316B
+00933155 61 POPAD
+00933156 1360 0D ADC ESP,DWORD PTR DS:[EAX+D]
+00933159 -E9 9388E2FF JMP speed2.0075B9F1
+0093315E CC INT3
+0093315F CC INT3
+00933160 81EC E8020000 SUB ESP,2E8
+00933166 53 PUSH EBX
+00933167 55 PUSH EBP
+00933168 56 PUSH ESI
+00933169 57 PUSH EDI ; ntdll.7C910738
+0093316A 8D4424 60 LEA EAX,DWORD PTR SS:[ESP+60]
+
+At address 00933159 is jump that points in first section. That is OEP jump.
+
+
+
+Debugger checks are same as in SafeCast. We can place breakpoint on IsDebuggerPresent and then return to code:
+
+6670D9F0 56 PUSH ESI
+6670D9F1 68 80A77A66 PUSH 667AA780
+6670D9F6 33F6 XOR ESI,ESI
+6670D9F8 E8 72C00000 CALL 66719A6F
+6670D9FD 50 PUSH EAX
+6670D9FE E8 90C00000 CALL 66719A93
+6670DA03 83C4 08 ADD ESP,8
+6670DA06 85C0 TEST EAX,EAX
+6670DA08 74 1C JE SHORT 6670DA26
+6670DA0A FFD0 CALL EAX <------------------------ IsDebuggerPresent call.
+6670DA0C 8BF0 MOV ESI,EAX
+6670DA0E 66:85F6 TEST SI,SI
+6670DA11 74 13 JE SHORT 6670DA26
+6670DA13 E8 6238FFFF CALL 6670127A <------------------- "BadBoy" procedure!
+6670DA18 66:8BF0 MOV SI,AX
+6670DA1B 66:F7DE NEG SI
+6670DA1E 1BF6 SBB ESI,ESI
+6670DA20 46 INC ESI
+6670DA21 66:85F6 TEST SI,SI
+6670DA24 75 13 JNZ SHORT 6670DA39
+6670DA26 8B4424 08 MOV EAX,DWORD PTR SS:[ESP+8]
+6670DA2A 8B08 MOV ECX,DWORD PTR DS:[EAX]
+6670DA2C 81E1 EA894267 AND ECX,674289EA
+6670DA32 8908 MOV DWORD PTR DS:[EAX],ECX
+6670DA34 66:8BC6 MOV AX,SI
+6670DA37 5E POP ESI ; 0012FB10
+6670DA38 C3 RETN
+6670DA39 8B4424 08 MOV EAX,DWORD PTR SS:[ESP+8]
+6670DA3D 8B08 MOV ECX,DWORD PTR DS:[EAX]
+6670DA3F 81E1 119800EF AND ECX,EF009811
+6670DA45 8908 MOV DWORD PTR DS:[EAX],ECX
+6670DA47 66:8BC6 MOV AX,SI
+6670DA4A 5E POP ESI ; 0012FB10
+6670DA4B C3 RETN
+
+When we break there, we trace into "BadBoy" procedure. When we enter in it, we just place RETN on first opcode inside and all debugger checks are killed. It is already explained in SafeCast tutorial.
+
+SafeDisc debugger, or self-debugging is something new. Protected program will create couple temporyr files in temp older. One of those files (they all have random names) is executable. Main protected file starts that executable and then waits (WaitForSingleObject) signal that is can continue. Temp executable will attach to protected exe , give it signal and continue to debug it. This prevents debugging with Olly or any RING3 debugger. That can be prevented by not executing CreateProcessA , WaitForSingleObject, and performing couple more small changes to prevent crushing.
+
+
+Here is how OEP can be found with Olly:
+
+- We place breakpoint on OEP jump:
+
+00933159 -E9 9388E2FF JMP speed2.0075B9F1
+
+- Then we place bp on CreateProcessA and break there:
+
+
+7C802367 > 8BFF MOV EDI,EDI
+7C802369 55 PUSH EBP
+7C80236A 8BEC MOV EBP,ESP
+7C80236C 6A 00 PUSH 0
+7C80236E FF75 2C PUSH DWORD PTR SS:[EBP+2C]
+7C802371 FF75 28 PUSH DWORD PTR SS:[EBP+28]
+7C802374 FF75 24 PUSH DWORD PTR SS:[EBP+24]
+7C802377 FF75 20 PUSH DWORD PTR SS:[EBP+20]
+7C80237A FF75 1C PUSH DWORD PTR SS:[EBP+1C]
+7C80237D FF75 18 PUSH DWORD PTR SS:[EBP+18]
+7C802380 FF75 14 PUSH DWORD PTR SS:[EBP+14]
+7C802383 FF75 10 PUSH DWORD PTR SS:[EBP+10]
+7C802386 FF75 0C PUSH DWORD PTR SS:[EBP+C]
+7C802389 FF75 08 PUSH DWORD PTR SS:[EBP+8]
+7C80238C 6A 00 PUSH 0
+7C80238E E8 0BB70100 CALL kernel32.CreateProcessInternalA
+7C802393 5D POP EBP ; speed2.00935424
+7C802394 C2 2800 RETN 28
+
+We don't execute it, instead we set "new origin" at RETN 28. We run and return to main code.
+
+- We must avoid CloseHandle execution after returning from CreateProcessA because process is not created, there is no handle and we would get INVALID_HANDLE exception. So we set new origin below:
+
+00935424 85C0 TEST EAX,EAX
+00935426 5D POP EBP
+00935427 74 1E JE SHORT speed2.00935447
+00935429 8B5424 20 MOV EDX,DWORD PTR SS:[ESP+20]
+0093542D 52 PUSH EDX
+0093542E FF53 1C CALL DWORD PTR DS:[EBX+1C] ; kernel32.CloseHandle
+00935431 8B4424 24 MOV EAX,DWORD PTR SS:[ESP+24]
+00935435 50 PUSH EAX
+00935436 FF53 1C CALL DWORD PTR DS:[EBX+1C] ; kernel32.CloseHandle
+00935439 5F POP EDI
+0093543A 5E POP ESI
+0093543B 66:B8 0100 MOV AX,1
+0093543F 5B POP EBX
+
+00935440 81C4 70060000 ADD ESP,670
+00935446 C3 RETN
+
+- Then we place bp at IsDebuggerPresent and we enter in "BadBoy" procedure where we patch first opcode with RETN.
+
+- After that, we can place bp at the end (end because SafeDisc checks some imports for CC bytes) of SetEvent API. That will bring ous very close to WaitForSingleObject part:
+
+667250A8 |> FF75 FC PUSH DWORD PTR SS:[EBP-4] ; /hEvent = 000000A0 (window)
+667250AB |. FF15 64407966 CALL DWORD PTR DS:[<&KERNEL32.SetEvent>] ; SetEvent
+667250B1 |. 85C0 TEST EAX,EAX <--------------------------- You should be here!!!
+667250B3 |. 75 0C JNZ SHORT ~df394b.667250C1
+667250B5 |. FFD3 CALL EBX ; ntdll.RtlGetLastWin32Error
+667250B7 |. FF75 FC PUSH DWORD PTR SS:[EBP-4]
+667250BA |. FFD6 CALL ESI ; kernel32.CloseHandle
+667250BC |. E8 8FC7FEFF CALL ~df394b.66711850
+667250C1 |> 6A FF PUSH -1 ; /Timeout = INFINITE
+667250C3 |. 57 PUSH EDI ; |hObject = 00000098 (window)
+667250C4 |. FF15 90407966 CALL DWORD PTR DS:[<&KERNEL32.WaitForSin>; WaitForSingleObject
+667250CA |. FF75 FC PUSH DWORD PTR SS:[EBP-4] <-------------- Set origin here to avoid above API.
+667250CD |. 8945 F8 MOV DWORD PTR SS:[EBP-8],EAX
+667250D0 |. FFD6 CALL ESI ; kernel32.CloseHandle
+667250D2 |. 57 PUSH EDI
+667250D3 |. FFD6 CALL ESI ; kernel32.CloseHandle
+667250D5 |. 837D F8 00 CMP DWORD PTR SS:[EBP-8],0
+667250D9 |. 5F POP EDI
+667250DA |. 5E POP ESI ; kernel32.CloseHandle
+667250DB |. 74 07 JE SHORT ~df394b.667250E4 <-------------- Execute this jump to avoid error detection.
+667250DD |. FFD3 CALL EBX ; ntdll.RtlGetLastWin32Error
+667250DF |. E8 6CC7FEFF CALL ~df394b.66711850
+667250E4 |> 5B POP EBX ; ntdll.RtlGetLastWin32Error
+667250E5 |. C9 LEAVE
+667250E6 . C3 RETN
+
+- Run and you'll break at OEP jump. Trace in and you will see OEP:
+
+0075B9F1 > 6A 18 PUSH 18
+0075B9F3 . 68 98397D00 PUSH speed2.007D3998
+0075B9F8 . E8 D3500000 CALL speed2.00760AD0
+0075B9FD . BF 94000000 MOV EDI,94
+0075BA02 . 8BC7 MOV EAX,EDI ; ntdll.7C910738
+0075BA04 . E8 E7070000 CALL speed2.0075C1F0
+0075BA09 . 8965 E8 MOV DWORD PTR SS:[EBP-18],ESP
+0075BA0C . 8BF4 MOV ESI,ESP
+0075BA0E . 893E MOV DWORD PTR DS:[ESI],EDI ; ntdll.7C910738
+0075BA10 . 56 PUSH ESI ; /pVersionInformation = FFFFFFFF
+0075BA11 . FF15 64317800 CALL DWORD PTR DS:[783164] ; GetVersionExA
+0075BA17 . 8B4E 10 MOV ECX,DWORD PTR DS:[ESI+10]
+...
+
+
+
+
+
+
+3. Restoring imports
+
+This feature is completly the same as in SafeCast and it is described in previous tutorial. I will not write whole thing again so please check SafeCast tutorial.
+
+First Type:
+Import points to some virtual addres where is code that calls FIND_CORRECT_IMPORT algo. When correct import is found, it jumps there. Using algo against itself we can decrypt all imports.
+
+Second Type:
+We have jumps that leads outside of main image. It leads to some code and eventualy it jumps to import.
+
+
+
+
+
+
+
+4. Emulated opcodes
+
+Again, same thing as in SafeCast. This JMP EAX jumps outside of code:
+
+004011E3 $ B8 FB0E0000 MOV EAX,0EFB
+004011E8 . 59 POP ECX ; kernel32.7C816D4F
+004011E9 . 8D0408 LEA EAX,DWORD PTR DS:[EAX+ECX]
+004011EC . 8B00 MOV EAX,DWORD PTR DS:[EAX]
+004011EE . FFE0 JMP EAX
+
+And that part of code is called from:
+
+00401089 /$ 51 PUSH ECX
+0040108A |. 50 PUSH EAX
+0040108B |. E8 53010000 CALL speed2.004011E3
+
+And that part is called from different locations:
+
+References in speed2:.text to 00401089
+Address Disassembly Comment
+005B7869 CALL speed2.00401089
+005B788E CALL speed2.00401089
+005B78F5 CALL speed2.00401089
+005B7921 CALL speed2.00401089
+005C08D7 CALL speed2.00401089
+005C08EC CALL speed2.00401089
+005C0916 CALL speed2.00401089
+005C0923 CALL speed2.00401089
+005C0945 CALL speed2.00401089
+005C0954 CALL speed2.00401089
+005CFDBD CALL speed2.00401089
+005D2243 CALL speed2.00401089
+005D2569 CALL speed2.00401089
+0065A71D CALL speed2.00401089
+00670CE1 CALL speed2.00401089
+006D9D8F CALL speed2.00401089
+006D9EF9 CALL speed2.00401089
+006D9FE0 CALL speed2.00401089
+006F5D87 CALL speed2.00401089
+006FEC11 CALL speed2.00401089
+
+JMP EAX will jump to procedure which will emulate "stolen" opcode, but it will write original back so emulation is performed only one time. Simply by executing those calls we will force SafeDisc to restore stolen code. there can be several this JMP EAX routines.I found two in this example.
+
+
+
+5. Nanomites
+
+Nanomites are by far the hardest part. Code section of protected program is full of INT 3 opcodes on unusuall places. For example let's check this procedure:
+
+006717FF /$ 8BFF MOV EDI,EDI ; speed2_.00803F90
+00671801 |. 55 PUSH EBP
+00671802 |. 8BEC MOV EBP,ESP
+00671804 |. 51 PUSH ECX ; ntdll.7C91056D
+00671805 |. 8365 FC 00 AND DWORD PTR SS:[EBP-4],0
+00671809 |. 8D45 FC LEA EAX,DWORD PTR SS:[EBP-4]
+0067180C |. 50 PUSH EAX
+0067180D |. 68 94B47A00 PUSH speed2_.007AB494 ; ASCII "SoftwareMicrosoftDirect3D"
+00671812 |. 68 02000080 PUSH 80000002
+00671817 |. FF15 10307800 CALL DWORD PTR DS:[783010]
+0067181D |. CC INT3
+0067181E |. CC INT3
+0067181F |. CC INT3
+00671820 |. CC INT3
+00671821 |. 56 PUSH ESI
+00671822 |. 8D45 14 LEA EAX,DWORD PTR SS:[EBP+14]
+00671825 |. 50 PUSH EAX
+00671826 |. FF75 10 PUSH DWORD PTR SS:[EBP+10]
+00671829 |. 8D45 10 LEA EAX,DWORD PTR SS:[EBP+10]
+0067182C |. 50 PUSH EAX
+0067182D |. 6A 00 PUSH 0
+0067182F |. FF75 0C PUSH DWORD PTR SS:[EBP+C] ; speed2_.007AB4DC
+00671832 |. FF75 FC PUSH DWORD PTR SS:[EBP-4]
+00671835 |. FF15 08307800 CALL DWORD PTR DS:[783008]
+0067183B |. FF75 FC PUSH DWORD PTR SS:[EBP-4]
+0067183E |. 8BF0 MOV ESI,EAX
+00671840 |. FF15 14307800 CALL DWORD PTR DS:[783014]
+00671846 |. 85F6 TEST ESI,ESI
+00671848 |. 5E POP ESI
+00671849 |. CC INT3
+0067184A |. CC INT3
+0067184B |. 8B45 10 MOV EAX,DWORD PTR SS:[EBP+10]
+0067184E |. 3B45 08 CMP EAX,DWORD PTR SS:[EBP+8]
+00671851 |. 75 05 JNZ SHORT speed2_.00671858
+00671853 |. 33C0 XOR EAX,EAX
+00671855 |. 40 INC EAX
+00671856 |. EB 02 JMP SHORT speed2_.0067185A
+00671858 |> 33C0 XOR EAX,EAX
+0067185A |> C9 LEAVE
+0067185B . C2 1000 RETN 10
+
+INT 3 opcode represent one nanomite. When nanmite is executed, it couse exception. SafeDisc debugger takes control, checks what type of exception occured and where, then it emulate that opcode or it writes original opcode there.
+
+To better understand how does this work, we need to debug SafeDisc debugger. With SoftICE it is easy to see what is going on, but if we want to do that with Olly, we need to perform small ritual. OK, so this is how I was able to attach olly to SafeDisc debugger:
+
+- Load main protected file in Olly and break on CreateProcessA. Stop there and wait.
+
+- Go to "Cocuments and SettingsYour_Name_HereLocal SettingsTemp" and open temporary executable in second Olly. Temp exe is hidden with some random name, in my case it is "~e5.0001". Change it's OEP to infinite jump, EB FE. Save changes and close that Olly.
+
+- Execute CreateProcessA (place bp at the end of API). New process is created and it's looping forever. Wait with this olly.
+
+- Open again second Olly and attach to new created process. F9 to run, F12 to pause. Restore oly OEP bytes. Minimize this olly.
+
+- In first Olly, break at IsDebuggerPresent to kill debugger checks by patching "badboy" procedure. After that just run program. Program will wait for second process to attach. It will wait forever (WaitForSingleObject with PUSH -1 parameter) and that is good for us.
+
+- Now here is confusing part: Open THIRD Olly instance, attach to the FIRST one, and detach FIRST OLLY INSTANCE from main proteced executable. Close third olly and that will close first one too, but protected program will be free in memory.
+
+- Now, only one Olly is left and that Olly debugs SafeDisc debugger. From here you can continue on WaitForDebugEvent.
+
+
+
+When INT 3 is executed, SD debugger checks where exception occured. Then it emulates that opcode. If same nanomite is executed second time, SD debugger will write (WriteProcessMemory) original opcode to main executable. That is probably to gain on speed. Non-stop emulation would slow down game to the death. Since opcode is second time written, there must be some check for that. Check is very simple, it is one CMP AX,1 and after it JNZ DONT_WRITE. Patching jump forces SD to always write opcode. Now I patched jump and played game within Olly a little. then I minimized, dumped, fixed IAT and code. I started dump and it worked! Game loaded perfect, but it crushed after some time what is expected because most of nanomites are not restored. So how to fix that?
+
+To tell you the truth, I didn't came out with generic solution so I fixed them manually. I attched olly to temp executable and I patched that check CMP AX,1 - JNZ DONT_WRITE. Then I played game a little, tried all kinds of races, tried online game, etc... everything to make sure that I trigered (and by that restored) as much as possible nanomites. Then I dumped code section. After that, I found OEP in instance without SafeDisc debugger and I pasted this dumped code there. Then I fixed imports and stolen opcodes. Now I got second dump from which I could play game. But on exit it would crush. I decide to open dump and check hom many there is nanomites.
+
+But amounth of CC bytes was huge due to reason that executable has tons of CC bytes that are not nanomites, but leftovers from VC++ compiler. For example:
+
+004017C8 . C3 RETN
+004017C9 CC INT3
+004017CA CC INT3
+004017CB CC INT3
+004017CC CC INT3
+004017CD CC INT3
+004017CE 90 NOP
+004017CF 90 NOP
+
+005AFD43 . E9 58220000 JMP dumped1.005B1FA0
+005AFD48 CC INT3
+005AFD49 CC INT3
+005AFD4A CC INT3
+005AFD4B CC INT3
+005AFD4C CC INT3
+005AFD4D CC INT3
+005AFD4E CC INT3
+005AFD4F CC INT3
+
+I wrote script for NOPing those CC bytes, then I found some nanomites and fixed them by examning SafeDisc debugg loop. In SD debugg loop, I would place bp on WaitForDebugEvent, then I would set address in buffer to point on my nanomite. Then in GetThreadContext buffer I would do the same. SafeDisc would decrypt code and I would just copy it. But as said, this is unfinished buisnes. I will have to examne it better or in a updated version of this tutorial, or in a new tutorial with new target (possible higher version of SafeDisc).
+
+I assume that SafeDisc must have some table with all addresses where are nanomites, table with original code, but I didn't had will to trace trough code whole day. I'm already tired.
+
+
+
+
+
+6. Custom CD check and a final touch
+
+I assume that this is not part of SafeDisc protection. I removed original CD and started dump, but it asked me for CD 2. Breakpoint on GetDriveTypeA got me to CD check procedure:
+
+005BF120 /$ 83EC 0C SUB ESP,0C
+005BF123 |. 53 PUSH EBX
+005BF124 |. 55 PUSH EBP
+005BF125 |. 56 PUSH ESI
+005BF126 |. 57 PUSH EDI
+005BF127 |. B3 41 MOV BL,41
+005BF129 |. BF 01000000 MOV EDI,1
+005BF12E |. 885C24 10 MOV BYTE PTR SS:[ESP+10],BL
+005BF132 |. FF15 60518F00 CALL DWORD PTR DS:[<&kernel32.GetLogical>; [GetLogicalDrives
+005BF138 |. 33ED XOR EBP,EBP
+005BF13A |. 68 00040000 PUSH 400
+005BF13F |. 894424 18 MOV DWORD PTR SS:[ESP+18],EAX
+005BF143 |. 896C24 1C MOV DWORD PTR SS:[ESP+1C],EBP
+005BF147 |. E8 5461FBFF CALL dump.005752A0
+005BF14C |. 8BF0 MOV ESI,EAX
+005BF14E |. 83C4 04 ADD ESP,4
+005BF151 |. 3BF5 CMP ESI,EBP
+005BF153 |. C605 7F058000 >MOV BYTE PTR DS:[80057F],0
+005BF15A |. 0F84 A1000000 JE dump.005BF201
+005BF160 |> 857C24 14 /TEST DWORD PTR SS:[ESP+14],EDI
+005BF164 |. 74 3E |JE SHORT dump.005BF1A4
+005BF166 |. 0FBEC3 |MOVSX EAX,BL
+005BF169 |. 50 |PUSH EAX
+005BF16A |. 68 D4387A00 |PUSH dump.007A38D4 ; ASCII "%c:"
+005BF16F |. 56 |PUSH ESI
+005BF170 |. E8 2FD31900 |CALL dump.0075C4A4
+005BF175 |. 83C4 0C |ADD ESP,0C
+005BF178 |. 56 |PUSH ESI ; /RootPathName = "A:"
+005BF179 |. FF15 5C518F00 |CALL DWORD PTR DS:[<&kernel32.GetDriveT>; GetDriveTypeA
+005BF17F |. 83F8 05 |CMP EAX,5
+005BF182 |. 74 0A |JE SHORT dump.005BF18E
+005BF184 |. 8B0D 60DC7900 |MOV ECX,DWORD PTR DS:[79DC60]
+005BF18A |. 85C9 |TEST ECX,ECX
+005BF18C |. 74 16 |JE SHORT dump.005BF1A4
+005BF18E |> 83F8 02 |CMP EAX,2
+005BF191 |. 74 11 |JE SHORT dump.005BF1A4
+005BF193 |. 8B4C24 10 |MOV ECX,DWORD PTR SS:[ESP+10]
+005BF197 |. 51 |PUSH ECX
+005BF198 |. E8 03FFFFFF |CALL dump.005BF0A0
+005BF19D |. 83C4 04 |ADD ESP,4
+005BF1A0 |. 84C0 |TEST AL,AL
+005BF1A2 |. 75 14 |JNZ SHORT dump.005BF1B8
+005BF1A4 |> FEC3 |INC BL
+005BF1A6 |. D1E7 |SHL EDI,1
+005BF1A8 |. 45 |INC EBP
+005BF1A9 |. 83FD 20 |CMP EBP,20
+005BF1AC |. 885C24 10 |MOV BYTE PTR SS:[ESP+10],BL
+005BF1B0 |.^7C AE JL SHORT dump.005BF160
+005BF1B2 |. 8B7C24 18 MOV EDI,DWORD PTR SS:[ESP+18]
+005BF1B6 |. EB 05 JMP SHORT dump.005BF1BD
+005BF1B8 |> BF 01000000 MOV EDI,1
+005BF1BD |> 56 PUSH ESI
+005BF1BE |. E8 FD60FBFF CALL dump.005752C0
+005BF1C3 |. 83C4 04 ADD ESP,4
+005BF1C6 |. 85FF TEST EDI,EDI
+005BF1C8 |. 74 30 JE SHORT dump.005BF1FA
+005BF1CA |. 881D 7F058000 MOV BYTE PTR DS:[80057F],BL
+005BF1D0 |. 881D B0E88600 MOV BYTE PTR DS:[86E8B0],BL
+005BF1D6 |. C605 B1E88600 >MOV BYTE PTR DS:[86E8B1],3A
+005BF1DD |. C605 B2E88600 >MOV BYTE PTR DS:[86E8B2],5C
+005BF1E4 |. C605 B3E88600 >MOV BYTE PTR DS:[86E8B3],0
+005BF1EB |. E8 4085FFFF CALL dump.005B7730
+005BF1F0 |. 5F POP EDI
+005BF1F1 |. 5E POP ESI
+005BF1F2 |. 5D POP EBP
+005BF1F3 |. 8AC3 MOV AL,BL
+005BF1F5 |. 5B POP EBX
+005BF1F6 |. 83C4 0C ADD ESP,0C
+005BF1F9 |. C3 RETN
+005BF1FA |> C605 7F058000 >MOV BYTE PTR DS:[80057F],0
+005BF201 |> 5F POP EDI
+005BF202 |. 5E POP ESI
+005BF203 |. 5D POP EBP
+005BF204 |. 32C0 XOR AL,AL
+005BF206 |. 5B POP EBX
+005BF207 |. 83C4 0C ADD ESP,0C
+005BF20A . C3 RETN
+
+This one is 3 times called. If this procedure returns EAX=0, CD check fails. This checks wants some files on CD etc. We just make some patch that will return EAX=1 and problem is solved.
+
+EA Games usually have couple logo movies that are shown uppon startup. They are very annoying because they cannot be skiped so I patched them too. But that is not part of protection.
+
+
+
+
+
+
+7. The end
+
+And that was it. It was not too hard, but again, my dump is not fully rebuilded. Just as much it needs for playing the game. Some nanomites are stil left unresolved but we learned something about SafeDisc protection features.
+
+Btw, here is script for finding OEP:
+
+//======================= START ================================
+/*
+================================================== ============
+SafeDisc v4.0 - Kill debug checks and find OEP script
+================================================== ============
+*/
+
+var OEP
+
+find eip,#E9????????CCCC81ECE802000053555657#
+mov OEP,$RESULT
+
+find eip,#751A8B4C243C8B5424348B44242C51525350#
+bp $RESULT
+esto
+bc eip
+
+add eip,1c
+
+gpa "IsDebuggerPresent","kernel32.dll"
+bp $RESULT
+esto
+bc eip
+rtr
+sti
+sti
+sti
+sti
+sti
+fill eip,1,0c3
+
+gpa "SetEvent","kernel32.dll"
+bphws $RESULT,"x"
+esto
+bphwc $RESULT
+rtr
+sti
+
+sti
+sti
+add eip,9
+
+sto
+sto
+sto
+sto
+sto
+sto
+sto
+sto
+add eip,9
+
+bp OEP
+esto
+bc eip
+sti
+ret
+//=========================== END ==============================
+جواب بصورت نقل قولجواب بصورت نقل قول17-01-2008, 08:35#60
+
+Morteza_SOS Morteza_SOS is offline
+پروفشنال
+
+Morteza_SOS's Avatarتاريخ عضويت
+Apr 2006
+پست ها
+577
+پيش فرض
+Level : intermediate
+
+---------------------------------
+Unpacking SafeCast 2.4
+---------------------------------
+
+
+What is SafeCast? Dou you know what is SafeDisc maybe? SafeDisc is well known CD protection from Macrovision, used in many software that comes on CD/DVD (games, etc...) . SafeCast is the same thing except it is made for programs that doesn't came on CD (downloadable programs, trial versions, etc...). In this tutorial we will see how version 2.4 can be unpacked. It is little older one, but I had program protected with it. Target for my tutorial is Adobe Photoshop 8.0, but this should be generic aproach for all 2.4 versions.
+
+
+
+1. Introduction
+
+Tools that I used for unpacking are usual ; PEiD, OllyDbg, ImpREC, LordPE, and some hex editor. Oh yeah, and Win XP.
+
+
+I installed program and I scanned installation folder with PEiD. PEiD gave two positive results:
+
+C:Program FilesAdobePhotoshop CSAdobeLM.dll SafeDisc 2.41.000 -> Macrovision [Overlay]
+C:Program FilesAdobePhotoshop CSTw10122.dat SafeDisc 2.41.000 -> Macrovision [Overlay]
+
+PEiD detects SafeCast as SafeDisc, what is correct because both are the same protection. You can manually check version of protection. Open protected file in Olly and check PE header at the end:
+
+10000FD0 00 00 00 00 42 6F 47 5F 20 2A 39 30 2E 30 26 21 ....BoG_ *90.0&!
+10000FE0 21 20 20 59 79 3E 00 00 00 00 00 00 00 00 00 00 ! Yy>..........
+10000FF0 00 00 00 00 02 00 00 00 29 00 00 00 00 00 00 00 ........).......
+
+String "BoG_" is unique in SafeDisc versions. Last 3 DWORDS hold version information number. You just need to translate hex numbers to decimal system:
+
+02 00 00 00 -> 2
+29 00 00 00 -> 41
+00 00 00 00 -> 0
+
+And you get 2.41.0 as version.
+
+
+
+
+
+2. Anti-debug layer
+
+Now, examning protection code is not so easy. SC (SafeCast in the rest of this tutorial) extracts couple files in temp folder that have different purpose. First file that is extracted , with some random name such is ~e5d141.tmp , is executable file. That file is only file that will remain in temp folder after protected program closes. This executable is a cleanup application. It's purpose is to delete all other protection files extracted in temporary folder. Other files are more interesting because one of them is responsable for debugging protection (ei, it holds couple anti debug tricks). This file can be dumped and examned, but it has some encrypted parts of code, plus some obfuscation and there is no need indeed to spend time on that.
+
+First file that I decided to unpack is that AdobeLM.dll. LM probably stands for License Manager. First check that I noticed in protected file is IsDebuggerPresent one. So I placed bp on that api and returned from kernel32. I was in temporary file:
+
+00879A70 /$ 56 PUSH ESI
+00879A71 |. 68 C8E18C00 PUSH ~df394b.008CE1C8
+00879A76 |. 33F6 XOR ESI,ESI
+00879A78 |. E8 B8B70000 CALL ~df394b.00885235
+00879A7D |. 50 PUSH EAX
+00879A7E |. E8 D6B70000 CALL ~df394b.00885259
+00879A83 |. 83C4 08 ADD ESP,8
+00879A86 |. 85C0 TEST EAX,EAX
+00879A88 |. 74 1C JE SHORT ~df394b.00879AA6
+00879A8A |. FFD0 CALL EAX <------------------------------- Here was IsDebuggerPresent call.
+00879A8C |. 8BF0 MOV ESI,EAX <---------------------------- I'm Here!!!
+00879A8E |. 66:85F6 TEST SI,SI
+00879A91 |. 74 13 JE SHORT ~df394b.00879AA6 <-------------- Good jump.
+00879A93 |. E8 E277FFFF CALL ~df394b.0087127A <------------------ BadBoy procedure.
+00879A98 |. 66:8BF0 MOV SI,AX
+00879A9B |. 66:F7DE NEG SI
+00879A9E |. 1BF6 SBB ESI,ESI
+00879AA0 |. 46 INC ESI
+00879AA1 |. 66:85F6 TEST SI,SI
+00879AA4 |. 75 13 JNZ SHORT ~df394b.00879AB9
+00879AA6 |> 8B4424 08 MOV EAX,DWORD PTR SS:[ESP+8]
+00879AAA |. 8B08 MOV ECX,DWORD PTR DS:[EAX]
+00879AAC |. 81E1 EA894267 AND ECX,674289EA
+00879AB2 |. 8908 MOV DWORD PTR DS:[EAX],ECX
+00879AB4 |. 66:8BC6 MOV AX,SI
+00879AB7 |. 5E POP ESI ; 0006F46C
+00879AB8 |. C3 RETN
+00879AB9 |> 8B4424 08 MOV EAX,DWORD PTR SS:[ESP+8]
+00879ABD |. 8B08 MOV ECX,DWORD PTR DS:[EAX]
+00879ABF |. 81E1 119800EF AND ECX,EF009811
+00879AC5 |. 8908 MOV DWORD PTR DS:[EAX],ECX
+00879AC7 |. 66:8BC6 MOV AX,SI
+00879ACA |. 5E POP ESI ; 0006F46C
+00879ACB . C3 RETN
+
+Now, what we can see is that CALL EAX was call to IsDebuggerPresent. If SI=0, jump below it will be executed and that is good jump. If SI=1, debugger is detected. Procedure below jump is executed if debugger is detected. Ofcourse, logic says that we just change SI from 1 to 0 and we can pass this check, but I was wondering how many times that "BadBoy" procedure is used. So I traced in it:
+
+0087127A /$ 55 PUSH EBP
+0087127B |. 8BEC MOV EBP,ESP
+0087127D |. 81EC 14010000 SUB ESP,114
+00871283 |. 56 PUSH ESI
+00871284 |. 33F6 XOR ESI,ESI
+00871286 |. E8 DC450100 CALL ~df394b.00885867
+0087128B |. 50 PUSH EAX
+0087128C |. E8 91000000 CALL ~df394b.00871322
+00871291 |. 66:85C0 TEST AX,AX
+00871294 |. 59 POP ECX ; ~df394b.00879A98
+00871295 |. 0F84 81000000 JE ~df394b.0087131C
+0087129B |. 8D85 ECFEFFFF LEA EAX,DWORD PTR SS:[EBP-114]
+008712A1 |. 68 04010000 PUSH 104 ; /BufSize = 104 (260.)
+008712A6 |. 50 PUSH EAX ; |PathBuffer = 00000001
+008712A7 |. 56 PUSH ESI ; |hModule = 00000001
+008712A8 |. FF15 B8118C00 CALL DWORD PTR DS:[<&KERNEL32.GetModuleF>; GetModuleFileNameA
+008712AE |. 56 PUSH ESI ; /hTemplateFile = 00000001
+008712AF |. 56 PUSH ESI ; |Attributes = READONLY
+008712B0 |. 6A 03 PUSH 3 ; |Mode = OPEN_EXISTING
+008712B2 |. 56 PUSH ESI ; |pSecurity = 00000001
+008712B3 |. 6A 01 PUSH 1 ; |ShareMode = FILE_SHARE_READ
+008712B5 |. 8D85 ECFEFFFF LEA EAX,DWORD PTR SS:[EBP-114] ; |
+008712BB |. 68 00000080 PUSH 80000000 ; |Access = GENERIC_READ
+008712C0 |. 50 PUSH EAX ; |FileName = 00000001 ???
+008712C1 |. FF15 BC118C00 CALL DWORD PTR DS:[<&KERNEL32.CreateFile>; CreateFileA
+008712C7 |. 83F8 FF CMP EAX,-1
+008712CA |. 8945 F0 MOV DWORD PTR SS:[EBP-10],EAX
+008712CD |. 75 08 JNZ SHORT ~df394b.008712D7
+008712CF |. FF15 E0108C00 CALL DWORD PTR DS:[<&KERNEL32.GetLastErr>; [GetLastError
+008712D5 |. EB 45 JMP SHORT ~df394b.0087131C
+008712D7 |> 8D45 F0 LEA EAX,DWORD PTR SS:[EBP-10]
+008712DA |. 6A 65 PUSH 65
+008712DC |. 50 PUSH EAX
+008712DD |. 8975 F4 MOV DWORD PTR SS:[EBP-C],ESI
+008712E0 |. E8 8C490100 CALL ~df394b.00885C71
+008712E5 |. 8D45 F0 LEA EAX,DWORD PTR SS:[EBP-10] ; |
+008712E8 |. 56 PUSH ESI ; |Arg2 = 00000001
+008712E9 |. 50 PUSH EAX ; |Arg1 = 00000001
+008712EA |. E8 B5450100 CALL ~df394b.008858A4 ; ~df394b.008858A4
+008712EF |. 83C4 10 ADD ESP,10
+008712F2 |. 66:85C0 TEST AX,AX
+008712F5 |. 74 1C JE SHORT ~df394b.00871313
+008712F7 |. 8D45 F0 LEA EAX,DWORD PTR SS:[EBP-10]
+008712FA |. 68 B0C18C00 PUSH ~df394b.008CC1B0 ; ASCII "stxt371"
+008712FF |. 50 PUSH EAX
+00871300 |. E8 46000000 CALL ~df394b.0087134B
+00871305 |. 8BF0 MOV ESI,EAX
+00871307 |. 8D45 F0 LEA EAX,DWORD PTR SS:[EBP-10]
+0087130A |. 50 PUSH EAX
+0087130B |. E8 BD460100 CALL ~df394b.008859CD
+00871310 |. 83C4 0C ADD ESP,0C
+00871313 |> FF75 F0 PUSH DWORD PTR SS:[EBP-10] ; /hObject = 00007B8E
+00871316 |. FF15 EC108C00 CALL DWORD PTR DS:[<&KERNEL32.CloseHandl>; CloseHandle
+0087131C |> 66:8BC6 MOV AX,SI
+0087131F |. 5E POP ESI ; ~df394b.00879A98
+00871320 |. C9 LEAVE
+00871321 . C3 RETN
+
+Inside we can see that it finds executable that loaded this dll (which is in this case LOADDLL.EXE from Olly) and then it reads some information from it, etc... But that is not important for us. I checked from how many locations this procedure is called. Olly says:
+
+EBP=0006F464
+Local calls from 008796CF, 00879789, 00879865, 00879A93
+
+This procedure can be called 4 times. So we have 4 anti-debug tricks. Let's check those locations.
+
+
+
+[1] First reference to that procedure is from 008796CF:
+
+008796B4 |. 64:A1 18000000 MOV EAX,DWORD PTR FS:[18]
+008796BA |. 8B48 20 MOV ECX,DWORD PTR DS:[EAX+20]
+008796BD |. 85C9 TEST ECX,ECX
+008796BF |. 75 05 JNZ SHORT ~df394b.008796C6
+008796C1 |. 33C0 XOR EAX,EAX
+008796C3 |. 8945 FC MOV DWORD PTR SS:[EBP-4],EAX
+008796C6 |> 61 POPAD
+008796C7 |. 8B45 FC MOV EAX,DWORD PTR SS:[EBP-4] ; ~df394b.008713E9
+008796CA |. 66:85C0 TEST AX,AX
+008796CD |. 74 10 JE SHORT ~df394b.008796DF
+008796CF |. E8 A67BFFFF CALL ~df394b.0087127A
+008796D4 |. 66:F7D8 NEG AX
+008796D7 |. 1BC0 SBB EAX,EAX
+008796D9 |. 40 INC EAX
+008796DA |. 66:85C0 TEST AX,AX
+008796DD |. 75 10 JNZ SHORT ~df394b.008796EF
+008796DF |> 8B4D 08 MOV ECX,DWORD PTR SS:[EBP+8]
+008796E2 |. 8121 E16AFEFE AND DWORD PTR DS:[ECX],FEFE6AE1
+008796E8 |. 5F POP EDI ; 0006F46C
+008796E9 |. 5E POP ESI ; 0006F46C
+008796EA |. 5B POP EBX ; 0006F46C
+008796EB |. 8BE5 MOV ESP,EBP
+008796ED |. 5D POP EBP ; 0006F46C
+008796EE |. C3 RETN
+008796EF |> 8B4D 08 MOV ECX,DWORD PTR SS:[EBP+8]
+008796F2 |. 5F POP EDI ; 0006F46C
+008796F3 |. 5E POP ESI ; 0006F46C
+008796F4 |. 5B POP EBX ; 0006F46C
+008796F5 |. 8121 005CE46A AND DWORD PTR DS:[ECX],6AE45C00
+008796FB |. 8BE5 MOV ESP,EBP
+008796FD |. 5D POP EBP ; 0006F46C
+008796FE . C3 RETN
+
+We can see that it is a custom IsDebuggerPresent check.
+
+
+
+[2] Second reference is at 00879789 and it is the same thing - a custom IsDebuggerPresent check.
+
+
+
+[3] Third reference at 00879865 is ZwQueryInformationProcess check:
+
+0087983E |. 6A 00 PUSH 0
+00879840 |. 8D4C24 10 LEA ECX,DWORD PTR SS:[ESP+10]
+00879844 |. 6A 04 PUSH 4
+00879846 |. 51 PUSH ECX
+00879847 |. 6A 07 PUSH 7 <----------------------------- Parameter for checking debugger presence!
+00879849 |. FF15 B4108C00 CALL DWORD PTR DS:[<&KERNEL32.GetCurrentProcess>]
+0087984F |. 50 PUSH EAX
+00879850 |. FFD7 CALL EDI <--------------------------- ZwQueryInformationProcess call!
+00879852 |. 8B4424 0C MOV EAX,DWORD PTR SS:[ESP+C]
+00879856 |. 85C0 TEST EAX,EAX
+00879858 |. 75 02 JNZ SHORT ~df394b.0087985C
+0087985A |. 33F6 XOR ESI,ESI
+0087985C |> 8BC6 MOV EAX,ESI
+0087985E |. 5F POP EDI
+0087985F |. 66:85F6 TEST SI,SI
+00879862 |. 5E POP ESI
+00879863 |. 74 10 JE SHORT ~df394b.00879875
+00879865 |. E8 107AFFFF CALL ~df394b.0087127A
+0087986A |. 66:F7D8 NEG AX
+0087986D |. 1BC0 SBB EAX,EAX
+0087986F |. 40 INC EAX
+00879870 |. 66:85C0 TEST AX,AX
+00879873 |. 75 12 JNZ SHORT ~df394b.00879887
+00879875 |> 8B0B MOV ECX,DWORD PTR DS:[EBX]
+00879877 |. 81E1 E3EEAB96 AND ECX,96ABEEE3
+0087987D |. 890B MOV DWORD PTR DS:[EBX],ECX
+0087987F |. 5B POP EBX
+00879880 |. 81C4 98000000 ADD ESP,98
+00879886 |. C3 RETN
+00879887 |> 8B8C24 A000000>MOV ECX,DWORD PTR SS:[ESP+A0]
+0087988E |. 5B POP EBX
+0087988F |. 8121 524C6AA7 AND DWORD PTR DS:[ECX],A76A4C52
+00879895 |. 81C4 98000000 ADD ESP,98
+0087989B . C3 RETN
+
+
+[4] And a final reference is our IsDebuggerPresent check at 00879A93, already explained.
+
+
+
+So we have only IsDebuggerPresent and ZwQueryInformationProcess. Now , weird is that I used OllyAdvanced plugin to hide from these checks , but sometimes photoshop would run within olly and sometimes don't. I don't know why. But there is no need for any plugins. I realized that we can just patch (fill with NOPs) whole "BadBoy" procedure and neither one debugger check will affect our debugging session 
+
+Oh , I forgot: be carefull where to place breakpoints. SC checks some APIs:
+
+12F794E3 |. 803C03 CC |CMP BYTE PTR DS:[EBX+EAX],0CC
+
+
+
+
+
+
+3. Reaching OEP
+
+Finding OEP is not hard after this. If you check Entry Point of protected file (adobelm.dll in my case), you will see obvious OEP jump:
+
+1005A05E > 55 PUSH EBP <-------------------------------- Entry Point of protected dll.
+1005A05F 8BEC MOV EBP,ESP
+1005A061 60 PUSHAD
+1005A062 BB 5EA00510 MOV EBX,OFFSET AdobeLM.<ModuleEntryPoint>
+1005A067 33C9 XOR ECX,ECX
+1005A069 8A0D 3DA00510 MOV CL,BYTE PTR DS:[1005A03D]
+...
+cut
+...
+1005A10B 58 POP EAX
+1005A10C FF35 13A10510 PUSH DWORD PTR DS:[1005A113]
+1005A112 C3 RETN
+1005A113 72 16 JB SHORT AdobeLM.1005A12B
+1005A115 61 POPAD
+1005A116 1360 0D ADC ESP,DWORD PTR DS:[EAX+D]
+1005A119 -E9 A6CEFCFF JMP AdobeLM.10026FC4 <-------------------- Jump to first section, OEP jump.
+1005A11E CC INT3
+1005A11F CC INT3
+
+That jump is always there, we just needed to decrypt code.
+
+
+
+
+
+
+4. Import protection
+
+This is the hardest part. Most of imports are redirected to procedure that will find correct import. Let's see how imports look in unpacked dll.
+
+First we have import call:
+
+10026EF8 |. FF15 C0610310 CALL DWORD PTR DS:[100361C0]
+
+That call points to allocated memory block:
+
+00BBB117 68 8C11EABF PUSH BFEA118C
+00BBB11C 9C PUSHFD
+00BBB11D 60 PUSHAD
+00BBB11E 54 PUSH ESP
+00BBB11F 68 57B1BB00 PUSH 0BBB157
+00BBB124 E8 6C32D0FF CALL ~df394b.008BE395
+00BBB129 83C4 08 ADD ESP,8
+00BBB12C 6A 00 PUSH 0
+00BBB12E 58 POP EAX ; AdobeLM.10026EFE
+00BBB12F 61 POPAD
+00BBB130 9D POPFD
+00BBB131 C3 RETN
+00BBB132 0000 ADD BYTE PTR DS:[EAX],AL
+
+Call in this block leads to procedure in one of temporary dlls and that procedure finds correct import and jumps to it with RETN:
+
+008BE504 61 POPAD
+008BE505 9D POPFD
+008BE506 C3 RETN
+
+I acctually tought that this will be the easiest part in SafeCast unpacking. But I was wrong.
+
+
+
+- My failure
+
+My first attempt (and second , and third , and ... untill I gone totaly mad), was to write simple script for finding right imports. And that is very easy since IAT is filled with pointers and imports:
+
+...
+...
+thunk GDI32.DLL
+...
+10036034 00BC4A80
+10036038 77F15E10 GDI32.CreateCompatibleDC
+1003603C 00BC5406
+10036040 00BC58C9
+10036044 00BC5D8C
+10036048 00BC624F
+1003604C 00BC6712
+10036050 00BC6BD5
+10036054 00BC7098
+10036058 00BC755B
+1003605C 00000000
+10036060 00BA0E0F
+...
+thunk KERNEL32.DLL
+...
+10036208 7C812BE6 kernel32.GetCPInfo
+1003620C 00BC0B90
+10036210 00BC1053
+10036214 00000000
+10036218 00BD04BF
+...
+thunk USER32.DLL
+...
+100362C0 00BDCCBD
+100362C4 77D8050B USER32.MessageBoxA
+100362C8 00000000
+100362CC 00000000
+
+So idea for script was to trace those pointers and obtain imports. That worked and I retrieved all imports. All three thunks was filled with imports. But! Imports was messed. It means that GetCommandLine would be placed on wrong thunk, and many more. I don't know the reason why. I have ome ideas but I'm not sure. After that, I traced trought temporary files, decrypting , removing junk obfuscation, all that in order to se can I find where SC fills imports into IAT. I found it with hardware breakpoints, but I just couldn't find some "magic jump". After some time I noticed that I get good imports if I trace calls and jumps, not the IAT itself.
+
+
+
+- Heureka ! 
+
+Ok. I can retrieve whole IAT, but imports are mixed in thunks. But, I can save that IAT, then use tracing calls to find good mports, than just redirect those references to new IAT. First I found IAT:
+
+12EF6000 77DFD5BB ADVAPI32.RegCreateKeyA
+...
+12EF6018 77DD77B3 ADVAPI32.SetSecurityDescriptorDacl
+12EF601C 00000000
+12EF6020 5D093439 comctl_1.InitCommonControlsEx
+12EF6024 00000000
+12EF6028 77F16A3B GDI32.DeleteObject
+...
+12EF6058 77F159A0 GDI32.SelectObject
+12EF605C 00000000
+12EF6060 7C80EFD7 kernel32.FindClose
+12EF6064 7C80180E kernel32.ReadFile
+...
+12EF6210 7C801E16 kernel32.TerminateProcess
+12EF6214 00000000
+12EF6218 77D4DB62 USER32.PostMessageA
+12EF621C 77D4E2AE USER32.SendMessageA
+...
+12EF62C0 77D4C6BC USER32.RedrawWindow
+12EF62C4 77D8050B USER32.MessageBoxA
+
+I saved binary in text file. Then I restarted AdobeLM.dll (within main photoshop exe), found OEP of DLL, and I placed IAT in one SC section (Section=stxt774). Then I started to write scripts for redirecting references. We have these possibilities:
+
+JMP DWORD [IMPORT/POINTER]
+CALL DWORD [IMPORT/POINTER]
+MOV REG, DWORD [IMPORT/POINTER] (reg=eax,ebx,ecx,edx,esi,edi,ebp)
+
+
+Here is nasty trick (?!?) that also confused me:
+
+12EC26D8 FF15 20600310 CALL DWORD PTR DS:[10036020]
+
+If I load DLL in Olly, this call will point to walue in IAT (because image base of dll is 10000000). BUT, that is false call - a junk. If I load DLL within photoshop, it doesn't point to IAT (because it is loaded on different addres due lack of space in memory caused by lot of other dlls loaded)! In first case, it affects my scripts! In second, it is only junk.
+
+Fixing JMP/CALL references was easy, but registers references I fixed manually (huh, I took me long to do that). Ok, after imports are fixed, I checked them one more time to be sure that I didn't missed something.
+
+
+
+
+
+5. More imports
+
+I runned DLL trough Olly and it crushed with message "LOADDLL.EXE: Unable to load dll". In case that DLL is OK, I should get message in olly status bar "Initialization of dll finished". So I traced again to see where it crushes and I found this jump:
+
+12EEAF9B .-E9 70C90200 JMP dump.12F17910
+12EEAFA0 85 DB 85
+12EEAFA1 . 834E 04 FF OR DWORD PTR DS:[ESI+4],FFFFFFFF
+12EEAFA5 . 6A 01 PUSH 1
+12EEAFA7 . 8906 MOV DWORD PTR DS:[ESI],EAX
+12EEAFA9 . 58 POP EAX
+12EEAFAA . 5E POP ESI
+12EEAFAB . C3 RETN
+
+Ah, crap >:( This jump points to section where I placed new IAT. Let's see what is it in original DLL:
+
+12F17910 ? 53 PUSH EBX ; AdobeLM.12EC0000
+12F17911 ? E8 B9100000 CALL AdobeLM.12F189CF
+
+Then:
+
+12F189CF /$ 870424 XCHG DWORD PTR SS:[ESP],EAX
+12F189D2 |. 9C PUSHFD
+12F189D3 |. 05 15040000 ADD EAX,415
+12F189D8 |. 8B18 MOV EBX,DWORD PTR DS:[EAX]
+12F189DA |. 6BDB 21 IMUL EBX,EBX,21 ; AdobeLM.12EC0000
+12F189DD |. 0358 04 ADD EBX,DWORD PTR DS:[EAX+4]
+12F189E0 |. 9D POPFD
+12F189E1 |. 58 POP EAX ; 13298DDA
+12F189E2 |. 871C24 XCHG DWORD PTR SS:[ESP],EBX ; AdobeLM.12EC0000
+12F189E5 . C3 RETN
+
+Then:
+
+13298DDA 68 A1AFEE12 PUSH 12EEAFA1
+13298DDF 68 BD13EABF PUSH BFEA13BD
+13298DE4 9C PUSHFD
+13298DE5 60 PUSHAD
+13298DE6 54 PUSH ESP
+13298DE7 68 1A8E2913 PUSH 13298E1A
+13298DEC E8 A455CDFF CALL ~df394b.12F6E395
+13298DF1 83C4 08 ADD ESP,8
+13298DF4 6A 00 PUSH 0
+13298DF6 58 POP EAX
+13298DF7 61 POPAD
+13298DF8 9D POPFD
+13298DF9 C3 RETN
+
+This RETN jumps to same import algo that ends with:
+
+12F6E74A 8B65 0C MOV ESP,DWORD PTR SS:[EBP+C]
+12F6E74D 61 POPAD
+12F6E74E 9D POPFD
+12F6E74F C3 RETN
+
+Return to 7C809737 (kernel32.GetCurrentThreadId)
+
+And after import is executed, it returns to code below jump and one junky byte. So this is another replace for import call of type CALL DWORD[IMPORT]!?! It seams that it is. But code is little different after every jump. Different or not, I wrote easy script for finding all imports. Now, this was all pretty messy because I didn't expect this, so I won't describe how I fixed these imports. It's up to your skills - or do it manually, or write scripts, or code some plugin.
+
+
+
+
+
+6. Emulated opcodes
+
+Just when I tought that DLL is finaly unpacked - I stumbled on new problem. I tried to run DLL in Olly, but it stoped on exception. I located problem:
+
+12EC34E3 $ B8 7BEFFFFF MOV EAX,-1085
+12EC34E8 . 59 POP ECX ; dump.12EC41D0
+12EC34E9 . 8D0408 LEA EAX,DWORD PTR DS:[EAX+ECX]
+12EC34EC . 8B00 MOV EAX,DWORD PTR DS:[EAX]
+12EC34EE .-FFE0 JMP EAX <------------------------------ It jumps to nowhere.
+
+In original file, that jump jumps to temporary DLL:
+
+12F31507 . 58 59 68 00 ASCII "XYh",0
+12F3150B 00 DB 00
+12F3150C 40 DB 40 ; CHAR '@'
+12F3150D 00 DB 00
+12F3150E . 9C PUSHFD
+12F3150F . 60 PUSHAD
+12F31510 . 54 PUSH ESP
+12F31511 . E8 D2FFFFFF CALL ~df394b.12F314E8
+12F31516 . 5C POP ESP
+12F31517 . 61 POPAD
+12F31518 . 9D POPFD
+12F31519 . C3 RETN
+
+12F314F4 |. 8945 FC MOV DWORD PTR SS:[EBP-4],EAX ; ~df394b.12F727F4
+12F314F7 |. 8B45 FC MOV EAX,DWORD PTR SS:[EBP-4] ; ~df394b.12F8CD68
+12F314FA |. 8B00 MOV EAX,DWORD PTR DS:[EAX] ; ~df394b.12F31277
+12F314FC |. 8B4D FC MOV ECX,DWORD PTR SS:[EBP-4] ; ~df394b.12F8CD68
+12F314FF |. FF50 08 CALL DWORD PTR DS:[EAX+8] ; ~df394b.?PerformFixup@CJumpRun@@UAEKK@Z
+12F31502 |. 8945 08 MOV DWORD PTR SS:[EBP+8],EAX ; ~df394b.12F727F4
+12F31505 |. C9 LEAVE
+12F31506 . C3 RETN
+
+It countinues inside that DLL and enters in function which has interesting name: PerformFixup@CJumpRun@@UAEKK@Z. After that it returns to some location in main DLL.
+
+That JMP EAX is accessed trugh this small procedure inside of main DLL:
+
+12EC41C9 /$ 51 PUSH ECX
+12EC41CA |. 50 PUSH EAX
+12EC41CB |. E8 13F3FFFF CALL dump.12EC34E3
+12EC41D0 |$ 8B4424 04 MOV EAX,DWORD PTR SS:[ESP+4] ; dump.12EC0000
+12EC41D4 |. 56 PUSH ESI
+12EC41D5 |. 8BF1 MOV ESI,ECX
+12EC41D7 |. 8B08 MOV ECX,DWORD PTR DS:[EAX]
+12EC41D9 |. 890E MOV DWORD PTR DS:[ESI],ECX
+12EC41DB |. E8 30F6FFFF CALL dump.12EC3810
+12EC41E0 |. 8BC6 MOV EAX,ESI
+12EC41E2 |. 5E POP ESI ; ntdll.7C9011A7
+12EC41E3 . C2 0400 RETN 4
+
+And that procedure is called from these places:
+
+References in AdobeLM:.text to 12EC41C9
+Address Disassembly Comment
+12EC109B CALL AdobeLM.12EC41C9
+12EC1EE1 CALL AdobeLM.12EC41C9
+12EC2463 CALL AdobeLM.12EC41C9
+...
+lot of calls
+...
+12ED439B CALL AdobeLM.12EC41C9
+12ED441B CALL AdobeLM.12EC41C9
+
+I executed couple these calls and it semas that this code just emulates some calls, maybe jumps too (judging on stack). No registeres are changed uppon return. But, I was reading tutorial from mr. anonymous. He noticed that these calls emulate stolen opcodes. Also, to speed up execution of protected program (I guess) these opcodes are written to the place of call. I followed that PerformFixup@CJumpRun@@UAEKK@Z function in temp dll:
+
+12F3141C >/$ 55 PUSH EBP
+12F3141D |. 8BEC MOV EBP,ESP
+12F3141F |. 81EC D0020000 SUB ESP,2D0
+12F31425 |. 53 PUSH EBX ; AdobeLM.<ModuleEntryPoint>
+12F31426 |. 8BD9 MOV EBX,ECX
+12F31428 |. 56 PUSH ESI
+12F31429 |. 57 PUSH EDI
+12F3142A |. 8D43 20 LEA EAX,DWORD PTR DS:[EBX+20]
+12F3142D |. 50 PUSH EAX ; /pCriticalSection = 0012E68C
+12F3142E |. 8945 FC MOV DWORD PTR SS:[EBP-4],EAX ; |
+12F31431 |. FF15 7010F712 CALL DWORD PTR DS:[<&KERNEL32.EnterCriti>; EnterCriticalSection
+12F31437 |. 8D85 30FDFFFF LEA EAX,DWORD PTR SS:[EBP-2D0]
+12F3143D |. 8BCB MOV ECX,EBX ; AdobeLM.<ModuleEntryPoint>
+12F3143F |. 50 PUSH EAX
+12F31440 |. FF75 08 PUSH DWORD PTR SS:[EBP+8] ; AdobeLM.<ModuleEntryPoint>
+12F31443 |. E8 E5FEFFFF CALL ~df394b.12F3132D
+12F31448 |. 8B85 E8FDFFFF MOV EAX,DWORD PTR SS:[EBP-218]
+12F3144E |. B9 30CDF812 MOV ECX,~df394b.12F8CD30
+12F31453 |. 8BF8 MOV EDI,EAX
+12F31455 |. 2B43 04 SUB EAX,DWORD PTR DS:[EBX+4]
+12F31458 |. 50 PUSH EAX ; /Arg1 = 0012E68C
+12F31459 |. E8 5CEC0300 CALL ~df394b.12F700BA ; ~df394b.12F700BA
+12F3145E |. 50 PUSH EAX
+12F3145F |. E8 F1010000 CALL ~df394b.12F31655
+12F31464 |. 8BC8 MOV ECX,EAX
+12F31466 |. E8 FC010000 CALL ~df394b.12F31667
+12F3146B |. 8BF0 MOV ESI,EAX
+12F3146D |. 85F6 TEST ESI,ESI
+12F3146F |. 74 3F JE SHORT ~df394b.12F314B0
+12F31471 |. 66:837B 08 01 CMP WORD PTR DS:[EBX+8],1
+12F31476 |. 75 3D JNZ SHORT ~df394b.12F314B5
+12F31478 |. 8D85 30FDFFFF LEA EAX,DWORD PTR SS:[EBP-2D0]
+12F3147E |. 8BCE MOV ECX,ESI
+12F31480 |. 50 PUSH EAX
+12F31481 |. E8 15560100 CALL ~df394b.12F46A9B
+12F31486 |. 8BCB MOV ECX,EBX ; AdobeLM.<ModuleEntryPoint>
+12F31488 |. E8 8AFEFFFF CALL ~df394b.12F31317
+12F3148D |. 83F8 04 CMP EAX,4 <------------------------- Compares number of CALL exceutions.
+12F31490 |. 72 14 JB SHORT ~df394b.12F314A6
+12F31492 |. 8BCE MOV ECX,ESI
+12F31494 |. E8 E8540100 CALL ~df394b.12F46981
+12F31499 |. 83F8 04 CMP EAX,4
+12F3149C |. 72 08 JB SHORT ~df394b.12F314A6
+12F3149E |. 57 PUSH EDI ; /Arg1 = 00000001
+12F3149F |. 8BCE MOV ECX,ESI ; |
+12F314A1 |. E8 2C550100 CALL ~df394b.12F469D2 ; ~df394b.12F469D2
+12F314A6 |> 56 PUSH ESI
+12F314A7 |. 8BCB MOV ECX,EBX ; AdobeLM.<ModuleEntryPoint>
+12F314A9 |. E8 33FEFFFF CALL ~df394b.12F312E1
+12F314AE |. EB 05 JMP SHORT ~df394b.12F314B5
+12F314B0 |> 66:8363 08 00 AND WORD PTR DS:[EBX+8],0
+12F314B5 |> 81EC CC020000 SUB ESP,2CC
+12F314BB |. B9 B3000000 MOV ECX,0B3
+12F314C0 |. 8DB5 30FDFFFF LEA ESI,DWORD PTR SS:[EBP-2D0]
+12F314C6 |. 8BFC MOV EDI,ESP
+12F314C8 |. F3:A5 REP MOVS DWORD PTR ES:[EDI],DWORD PTR DS>
+12F314CA |. 8D45 08 LEA EAX,DWORD PTR SS:[EBP+8]
+12F314CD |. 8BCB MOV ECX,EBX ; AdobeLM.<ModuleEntryPoint>
+12F314CF |. 50 PUSH EAX
+12F314D0 |. E8 DBFEFFFF CALL ~df394b.12F313B0
+12F314D5 |. FF75 FC PUSH DWORD PTR SS:[EBP-4] ; /pCriticalSection = 002456B8
+12F314D8 |. FF15 6C10F712 CALL DWORD PTR DS:[<&KERNEL32.LeaveCriti>; LeaveCriticalSection
+12F314DE |. 8B45 08 MOV EAX,DWORD PTR SS:[EBP+8] ; AdobeLM.<ModuleEntryPoint>
+12F314E1 |. 5F POP EDI ; ntdll.7C9011A7
+12F314E2 |. 5E POP ESI ; ntdll.7C9011A7
+12F314E3 |. 5B POP EBX ; ntdll.7C9011A7
+12F314E4 |. C9 LEAVE
+12F314E5 . C2 0400 RETN 4
+
+CMP EAX,4 compares number of execution of one CALL. So after call is used 3 times, 4-th time it will write original opcode instead of CALL. I patched both jumps and then used script to execute all those calls. That restored original opcodes:
+
+References in AdobeLM:.text to 12EC41C9
+Address Disassembly Comment
+12EC109B JE F34910A1
+12EC1EE1 CALL AdobeLM.12EE558E
+12EC2463 CALL AdobeLM.12EE5B40
+12EC2F0B JNZ AdobeLM.12EC343F
+12EC41C9 PUSH ECX (Initial CPU selection)
+12EC41EB JMP AdobeLM.12EC41C9
+12EC476B JE 12EB0571
+12EC486E CALL AdobeLM.12EE5B40
+12EC4AFA CALL AdobeLM.12EE6624
+12EC4ED2 CALL AdobeLM.12EC22A0
+12EC4FBB JNZ AdobeLM.12EC4E02
+12EC5022 CALL AdobeLM.12EE5B40
+12EC5301 CALL AdobeLM.12EE6624
+12EC5643 CALL AdobeLM.12EC22A0
+12EC57AB CALL AdobeLM.12ECFE40
+12EC5BA6 CALL AdobeLM.12EC22A0
+12EC5C61 CALL AdobeLM.12EC22A0
+12EC6476 CALL AdobeLM.12ECDE40
+12EC64E0 JMP AdobeLM.12EC6694
+12EC6527 JMP AdobeLM.12EC6694
+12EC657E JMP AdobeLM.12EC6694
+12EC65C5 JMP AdobeLM.12EC6694
+12EC6663 CALL AdobeLM.12ECDE40
+12EC66AB JE AdobeLM.12EC6E63
+12EC6776 CALL AdobeLM.12EC22A0
+12EC67D6 CALL AdobeLM.12EC22A0
+12EC6892 CALL AdobeLM.12EC22A0
+12EC68E3 CALL AdobeLM.12EC22A0
+12EC6978 CALL AdobeLM.12EC22A0
+12EC69C7 CALL AdobeLM.12EC22A0
+12EC6A6D CALL AdobeLM.12EC22A0
+12EC6AA8 JE AdobeLM.12EC7126
+12EC6C60 CALL AdobeLM.12EC4770
+12EC6E80 JE AdobeLM.12EC6F4B
+12EC6F67 CALL AdobeLM.12ED14A0
+12EC7394 CALL AdobeLM.12EC22A0
+12EC7459 CALL AdobeLM.12EC22A0
+12EC7D60 JE AdobeLM.12EC81DE
+12EC7F04 CALL AdobeLM.12ECDE40
+12EC8007 CALL AdobeLM.12ECDE40
+12EC80DA CALL AdobeLM.12ED0DA0
+12EC83F7 CALL AdobeLM.12EC22A0
+12EC88FF CALL AdobeLM.12EC4CD0
+12EC8983 JMP AdobeLM.12EC8AF5
+12EC89AE CALL AdobeLM.12ECDE40
+12EC8AC4 CALL AdobeLM.12ECDE40
+12EC8BE7 CALL AdobeLM.12EC22A0
+12EC90F0 CALL AdobeLM.12EC5440
+12EC9175 JMP AdobeLM.12EC92E7
+12EC91A0 CALL AdobeLM.12ECDE40
+12EC92B6 CALL AdobeLM.12ECDE40
+12EC941C CALL AdobeLM.12EC22A0
+12EC96C0 CALL AdobeLM.12EC22A0
+12ECA12B CALL AdobeLM.12EC22A0
+12ECA18C CALL AdobeLM.12EE6A30
+12ECA77C CALL AdobeLM.12EC22A0
+12ECA86F CALL AdobeLM.12EC22A0
+12ECAB07 CALL AdobeLM.12ECDE40
+12ECB23C CALL AdobeLM.12ECDE40
+12ECB3A2 CALL AdobeLM.12EC22A0
+12ECB3EB CALL AdobeLM.12EC22A0
+12ECB571 CALL AdobeLM.12EC22A0
+12ECBE10 CALL AdobeLM.12ECDE40
+12ECBE5D JE AdobeLM.12ECC013
+12ECBE6C JE AdobeLM.12ECBFF3
+12ECBE79 JE AdobeLM.12ECBFF3
+12ECBE87 JE AdobeLM.12ECBFF3
+12ECBFE0 CALL AdobeLM.12ECFEF0
+12ECC30B CALL AdobeLM.12ECDE40
+12ECC423 CALL AdobeLM.12EC22A0
+12ECC47D CALL AdobeLM.12EC22A0
+12ECFE3B JNZ 12EAFE41
+12ECFEEB JNZ AdobeLM.12EDFE34
+12ED3C3B JE AdobeLM.12EE6F41
+12ED439B JE AdobeLM.12F058A1
+12ED441B JNZ 12E66A21
+
+If some opcode is not good, I can just undo it. Some opcodes (as first on this list) can be wrong because byte combination that make script think that they are CALL..
+
+
+
+
+
+
+
+7. Testing
+
+All protection of SafeCast is defeated now. But since I deal with protected DLL, relocations should be also fixed in case that DLL will be loaded on different locations (what will happen for sure in this program). That can be done with ImpREC brother tool - ReloX. I didn't fix them because I would had to do all this unpacking again on different base addres. But there are work arounds for that. For example, we pack main executabe (photoshop.exe) with some simple packer and then we inject code that will load our DLL first.
+
+I decided to test my unpacked DLL. Photoshop started with some error, diferent than one for debugger/file_change detection. And after clicking OK, photoshop continued. Problem could be that my dump is "dirty". So second time I created new dump, but this time I didn't deleted two SC sections. I added 2000 Kb to the end of file and expanded last section. SC doesn't check for file size and section sizes! Good. After fixing this new dump (in which I have more faith), I got again error message and this time Photoshop wouldn't start ?!? Ok, dump should be good , so I traced to see usage of AdobeLM.dll.
+
+Photoshop first loads DLL:
+
+00F4723B |. 50 PUSH EAX ; /FileName = "C:...AdobeLM.dll"
+00F4723C |. F3:A4 REP MOVS BYTE PTR ES:[EDI],BYTE PTR DS:[ESI] ; |
+00F4723E |. FF15 74D51501 CALL DWORD PTR DS:[<&KERNEL32.LoadLibraryA>] ; LoadLibraryA
+
+Then it calls these functions in DLL:
+
+00F4728A |. FFD0 CALL EAX ; AdobeLM.CreateCAdobeLM_Object
+
+00F472BF |. FF52 04 CALL DWORD PTR DS:[EDX+4] ; AdobeLM.InitOfAdobeLM
+
+And while in this one, it shows error message:
+
+00F46F47 |. FF50 08 CALL DWORD PTR DS:[EAX+8] ; AdobeLM.CheckSigOfAdobeLM
+
+This one returns to EAX=FFFFFFF6. But if EAX=0, it loads second DLL protected with SC:
+
+00F39D8C |> FF75 C8 PUSH DWORD PTR SS:[EBP-38] ; /FileName = "Tw10122.dat"
+00F39D8F |. FF15 74D51501 CALL DWORD PTR DS:[<&KERNEL32.LoadLibraryA>] ; LoadLibraryA
+
+So, if we patch AdobelLM.dll a little, it will tought that program is in registered state and it will go load next protected dll.
+
+
+
+
+
+
+8. Summary
+
+Anti-debug tricks described in this tutorial (IsDebuggerPresent & ZwQueryInformationProcess) are same in all versions of SafeCast/Disc up to 3.20.024 version of protection (Medal of Honor Pacific Assault checked). Also, OEP jump is same on all those versions so script for finding OEP "01.SafeCast2-3_OEP.txt" should work on all targets in that range, even on protected CDs (if you have original CD).
+
+In the archive you will find some scripts that I used while unpacking. They are just here if you are curious to see what they do.
+
+01.SafeCast2-3_OEP.txt - for finding OEP.
+02.Decrypt_IAT.txt - to decrypt IAT.
+03.Decrypt_CALL-IAT.txt - to decrypt CALL/JMP import references.
+04.Decrypt_Jumps.txt - to decrypt jumps that again lead to imports.
+05.Decrypt_REG_IAT.txt - just for help to redirect registers references to iat.
+06.EmulatedCode.txt - for decrpting emulated opcodes.
+07.Dejunk.txt - for removing junk from temporary DLLs.

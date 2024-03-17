@@ -1,0 +1,555 @@
+{\rtf1\ansi\ansicpg1250\deff0\deflang1050{\fonttbl{\f0\fswiss\fprq2\fcharset238{\*\fname Arial;}Arial CE;}{\f1\fswiss\fcharset238{\*\fname Arial;}Arial CE;}{\f2\fmodern\fprq1\fcharset238{\*\fname Courier New;}Courier New CE;}}
+{\colortbl ;\red0\green0\blue255;}
+{\*\generator Msftedit 5.41.15.1507;}\viewkind4\uc1\pard\qc\cf1\b\f0\fs40\par
+SafeDisc 3.20 - 4.00\par
+\pard\cf0\b0\f1\fs20\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 1. Introduction to SafeDisc\par
+\cf0\b0\par
+If you ever played games in your life, then you for sure know what is SafeDisc. SafeDisc is one of the today most used CD protections. In a previous tutorial we met SafeDisc "small brother" - SafeCast. SafeDisc is product of the same company and it is almost indentical as SafeCast. Main difference is that SafeDisc checks for bad sectors on the CD to be sure that program is running from original one. Bad sectors cannot be copied to another CD. Well it shouldn't be, but programs like Alcohol 120% and similar can do that. It also depends of SafeDisc version. I'm not quite sure about that, copying CDs doesn't interest me. Removing protection layer is objective of this tutorial. For this tutorial you need original CD and Windows XP.\par
+\par
+Target for this tutorial is "Need For Speed Underground 2", protected probably with some version in range from 3.20 up to 4.00. It is not possible to detect exact version because SafeCast above 3.20 have erased version numbers. PEiD fails to detect protection at all, but Protection_ID v5.1f gives solid information:\par
+\par
+\cf1\f2 Scanning -> C:\\Need for Speed Underground 2\\speed2.exe\par
+File Type : Exe, Size : 5987981 (05B5E8Dh) Bytes\par
+-> File has 1166989 (011CE8Dh) bytes of appended data starting at offset 0499000h\par
+[!] Safedisc v3.20 - v4.xx or newer [removed version] detected !\par
+[!] removed version is Safedisc v4.00.000 - v4.00.003\par
+[!] Possible CD/DVD-Check String -> Please insert\par
+- Scan Took : 1.938 Seconds\cf0\f1\par
+\par
+\par
+Protection in this version of SafeDisc consits from:\par
+\par
+[1] CD check - bad sectors, we have original CD so this is not problem for unpacking.\par
+[2] Debugger checks - easy to defeat, same as in SafeCast.\par
+[3] Import protection - same as in SafeCast, requires little work but it is not hard.\par
+[4] Emulated opcodes - again, same as in SafeCast.\par
+[5] DebugBlocker and nanomites - the hardest part of protection.\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 2. OEP, debugger checks and SafeDisc debugger\par
+\cf0\b0\par
+It is very easy to find whre OEP should be. We open protected file in Olly and we can spot OEP jump:\par
+\par
+\f2 0093309E > 55               PUSH EBP\par
+0093309F   8BEC             MOV EBP,ESP\par
+009330A1   60               PUSHAD\par
+009330A2   BB 9E309300      MOV EBX,speed2.<ModuleEntryPoint>\par
+009330A7   33C9             XOR ECX,ECX\par
+009330A9   8A0D 3D309300    MOV CL,BYTE PTR DS:[93303D]\par
+009330AF   85C9             TEST ECX,ECX\par
+009330B1   74 0C            JE SHORT speed2.009330BF\par
+009330B3   B8 13319300      MOV EAX,speed2.00933113\par
+009330B8   2BC3             SUB EAX,EBX\par
+009330BA   83E8 05          SUB EAX,5\par
+009330BD   EB 0E            JMP SHORT speed2.009330CD\par
+009330BF   51               PUSH ECX\par
+...\par
+...\par
+00933146   8B40 04          MOV EAX,DWORD PTR DS:[EAX+4]\par
+00933149   FFD0             CALL EAX\par
+0093314B   58               POP EAX                                  ; kernel32.7C816D4F\par
+0093314C   FF35 53319300    PUSH DWORD PTR DS:[933153]\par
+00933152   C3               RETN\par
+00933153   72 16            JB SHORT speed2.0093316B\par
+00933155   61               POPAD\par
+00933156   1360 0D          ADC ESP,DWORD PTR DS:[EAX+D]\par
+\cf1 00933159  -E9 9388E2FF      JMP speed2.0075B9F1\par
+\cf0 0093315E   CC               INT3\par
+0093315F   CC               INT3\par
+00933160   81EC E8020000    SUB ESP,2E8\par
+00933166   53               PUSH EBX\par
+00933167   55               PUSH EBP\par
+00933168   56               PUSH ESI\par
+00933169   57               PUSH EDI                                 ; ntdll.7C910738\par
+0093316A   8D4424 60        LEA EAX,DWORD PTR SS:[ESP+60]\f1\par
+\par
+At address 00933159 is jump that points in first section. That is OEP jump.\par
+\par
+\par
+\par
+Debugger checks are same as in SafeCast. We can place breakpoint on IsDebuggerPresent and then return to code:\par
+\par
+\f2 6670D9F0   56               PUSH ESI\par
+6670D9F1   68 80A77A66      PUSH 667AA780\par
+6670D9F6   33F6             XOR ESI,ESI\par
+6670D9F8   E8 72C00000      CALL 66719A6F\par
+6670D9FD   50               PUSH EAX\par
+6670D9FE   E8 90C00000      CALL 66719A93\par
+6670DA03   83C4 08          ADD ESP,8\par
+6670DA06   85C0             TEST EAX,EAX\par
+6670DA08   74 1C            JE SHORT 6670DA26\par
+\cf1 6670DA0A   FFD0             CALL EAX <------------------------ IsDebuggerPresent call.\par
+\cf0 6670DA0C   8BF0             MOV ESI,EAX\par
+6670DA0E   66:85F6          TEST SI,SI\par
+6670DA11   74 13            JE SHORT 6670DA26\par
+\cf1 6670DA13   E8 6238FFFF      CALL 6670127A <------------------- "BadBoy" procedure!\par
+\cf0 6670DA18   66:8BF0          MOV SI,AX\par
+6670DA1B   66:F7DE          NEG SI\par
+6670DA1E   1BF6             SBB ESI,ESI\par
+6670DA20   46               INC ESI\par
+6670DA21   66:85F6          TEST SI,SI\par
+6670DA24   75 13            JNZ SHORT 6670DA39\par
+6670DA26   8B4424 08        MOV EAX,DWORD PTR SS:[ESP+8]\par
+6670DA2A   8B08             MOV ECX,DWORD PTR DS:[EAX]\par
+6670DA2C   81E1 EA894267    AND ECX,674289EA\par
+6670DA32   8908             MOV DWORD PTR DS:[EAX],ECX\par
+6670DA34   66:8BC6          MOV AX,SI\par
+6670DA37   5E               POP ESI                                  ; 0012FB10\par
+6670DA38   C3               RETN\par
+6670DA39   8B4424 08        MOV EAX,DWORD PTR SS:[ESP+8]\par
+6670DA3D   8B08             MOV ECX,DWORD PTR DS:[EAX]\par
+6670DA3F   81E1 119800EF    AND ECX,EF009811\par
+6670DA45   8908             MOV DWORD PTR DS:[EAX],ECX\par
+6670DA47   66:8BC6          MOV AX,SI\par
+6670DA4A   5E               POP ESI                                  ; 0012FB10\par
+6670DA4B   C3               RETN\f1\par
+\par
+When we break there, we trace into "BadBoy" procedure. When we enter in it, we just place RETN on first opcode inside and all debugger checks are killed. It is already explained in SafeCast tutorial.\par
+\par
+\par
+\par
+SafeDisc debugger, or self-debugging is something new. Protected program will create couple temporyr files in temp older. One of those files (they all have random names) is executable. Main protected file starts that executable and then waits (WaitForSingleObject) signal that is can continue. Temp executable will attach to protected exe , give it signal and continue to debug it. This prevents debugging with Olly or any RING3 debugger. That can be prevented by not executing CreateProcessA , WaitForSingleObject, and performing couple more small changes to prevent crushing.\par
+\par
+\par
+Here is how OEP can be found with Olly:\par
+\par
+- We place breakpoint on OEP jump:\par
+\par
+\cf1\f2 00933159  -E9 9388E2FF      JMP speed2.0075B9F1\par
+\cf0\f1\par
+- Then we place bp on CreateProcessA and break there:\par
+\par
+\cf1\f2 7C802367 > 8BFF             MOV EDI,EDI\par
+\cf0 7C802369   55               PUSH EBP\par
+7C80236A   8BEC             MOV EBP,ESP\par
+7C80236C   6A 00            PUSH 0\par
+7C80236E   FF75 2C          PUSH DWORD PTR SS:[EBP+2C]\par
+7C802371   FF75 28          PUSH DWORD PTR SS:[EBP+28]\par
+7C802374   FF75 24          PUSH DWORD PTR SS:[EBP+24]\par
+7C802377   FF75 20          PUSH DWORD PTR SS:[EBP+20]\par
+7C80237A   FF75 1C          PUSH DWORD PTR SS:[EBP+1C]\par
+7C80237D   FF75 18          PUSH DWORD PTR SS:[EBP+18]\par
+7C802380   FF75 14          PUSH DWORD PTR SS:[EBP+14]\par
+7C802383   FF75 10          PUSH DWORD PTR SS:[EBP+10]\par
+7C802386   FF75 0C          PUSH DWORD PTR SS:[EBP+C]\par
+7C802389   FF75 08          PUSH DWORD PTR SS:[EBP+8]\par
+7C80238C   6A 00            PUSH 0\par
+7C80238E   E8 0BB70100      CALL kernel32.CreateProcessInternalA\par
+7C802393   5D               POP EBP                                  ; speed2.00935424\par
+\cf1 7C802394   C2 2800          RETN 28\f1\par
+\cf0\par
+We don't execute it, instead we set "new origin" at RETN 28. We run and return to main code.\par
+\par
+- We must avoid CloseHandle execution after returning from CreateProcessA because process is not created, there is no handle and we would get INVALID_HANDLE exception. So we set new origin below:\par
+\par
+\f2 00935424   85C0             TEST EAX,EAX\par
+00935426   5D               POP EBP\par
+00935427   74 1E            JE SHORT speed2.00935447\par
+00935429   8B5424 20        MOV EDX,DWORD PTR SS:[ESP+20]\par
+0093542D   52               PUSH EDX\par
+0093542E   FF53 1C          CALL DWORD PTR DS:[EBX+1C]               ; kernel32.CloseHandle\par
+00935431   8B4424 24        MOV EAX,DWORD PTR SS:[ESP+24]\par
+00935435   50               PUSH EAX\par
+00935436   FF53 1C          CALL DWORD PTR DS:[EBX+1C]               ; kernel32.CloseHandle\par
+\cf1 00935439   5F               POP EDI\par
+\cf0 0093543A   5E               POP ESI\par
+0093543B   66:B8 0100       MOV AX,1\par
+0093543F   5B               POP EBX\par
+00935440   81C4 70060000    ADD ESP,670\par
+00935446   C3               RETN\f1\par
+\par
+- Then we place bp at IsDebuggerPresent and we enter in "BadBoy" procedure where we patch first opcode with RETN.\par
+\par
+- After that, we can place bp at the end (end because SafeDisc checks some imports for CC bytes) of SetEvent API. That will bring ous very close to WaitForSingleObject part:\par
+\par
+\f2 667250A8  |> FF75 FC        PUSH DWORD PTR SS:[EBP-4]                ; /hEvent = 000000A0 (window)\par
+667250AB  |. FF15 64407966  CALL DWORD PTR DS:[<&KERNEL32.SetEvent>] ; \\SetEvent\par
+\cf1 667250B1  |. 85C0           TEST EAX,EAX <--------------------------- You should be here!!!\par
+\cf0 667250B3  |. 75 0C          JNZ SHORT ~df394b.667250C1\par
+667250B5  |. FFD3           CALL EBX                                 ;  ntdll.RtlGetLastWin32Error\par
+667250B7  |. FF75 FC        PUSH DWORD PTR SS:[EBP-4]\par
+667250BA  |. FFD6           CALL ESI                                 ;  kernel32.CloseHandle\par
+667250BC  |. E8 8FC7FEFF    CALL ~df394b.66711850\par
+667250C1  |> 6A FF          PUSH -1                                  ; /Timeout = INFINITE\par
+667250C3  |. 57             PUSH EDI                                 ; |hObject = 00000098 (window)\par
+667250C4  |. FF15 90407966  CALL DWORD PTR DS:[<&KERNEL32.WaitForSin>; \\WaitForSingleObject\par
+\cf1 667250CA  |. FF75 FC        PUSH DWORD PTR SS:[EBP-4] <-------------- Set origin here to avoid above API.\par
+\cf0 667250CD  |. 8945 F8        MOV DWORD PTR SS:[EBP-8],EAX\par
+667250D0  |. FFD6           CALL ESI                                 ;  kernel32.CloseHandle\par
+667250D2  |. 57             PUSH EDI\par
+667250D3  |. FFD6           CALL ESI                                 ;  kernel32.CloseHandle\par
+667250D5  |. 837D F8 00     CMP DWORD PTR SS:[EBP-8],0\par
+667250D9  |. 5F             POP EDI\par
+667250DA  |. 5E             POP ESI                                  ;  kernel32.CloseHandle\par
+\cf1 667250DB  |. 74 07          JE SHORT ~df394b.667250E4 <-------------- Execute this jump to avoid error detection.\par
+\cf0 667250DD  |. FFD3           CALL EBX                                 ;  ntdll.RtlGetLastWin32Error\par
+667250DF  |. E8 6CC7FEFF    CALL ~df394b.66711850\par
+667250E4  |> 5B             POP EBX                                  ;  ntdll.RtlGetLastWin32Error\par
+667250E5  |. C9             LEAVE\par
+667250E6  \\. C3             RETN\f1\par
+\par
+- Run and you'll break at OEP jump. Trace in and you will see OEP:\par
+\par
+\cf1\f2 0075B9F1   > 6A 18          PUSH 18\par
+\cf0 0075B9F3   . 68 98397D00    PUSH speed2.007D3998\par
+0075B9F8   . E8 D3500000    CALL speed2.00760AD0\par
+0075B9FD   . BF 94000000    MOV EDI,94\par
+0075BA02   . 8BC7           MOV EAX,EDI                              ;  ntdll.7C910738\par
+0075BA04   . E8 E7070000    CALL speed2.0075C1F0\par
+0075BA09   . 8965 E8        MOV DWORD PTR SS:[EBP-18],ESP\par
+0075BA0C   . 8BF4           MOV ESI,ESP\par
+0075BA0E   . 893E           MOV DWORD PTR DS:[ESI],EDI               ;  ntdll.7C910738\par
+0075BA10   . 56             PUSH ESI                                 ; /pVersionInformation = FFFFFFFF\par
+0075BA11   . FF15 64317800  CALL DWORD PTR DS:[783164]               ; \\GetVersionExA\par
+0075BA17   . 8B4E 10        MOV ECX,DWORD PTR DS:[ESI+10]\par
+...\f1\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 3. Restoring imports\par
+\cf0\b0\par
+This feature is completly the same as in SafeCast and it is described in previous tutorial. I will not write whole thing again so please check SafeCast tutorial.\par
+\par
+First Type:\par
+Import points to some virtual addres where is code that calls FIND_CORRECT_IMPORT algo. When correct import is found, it jumps there. Using algo against itself we can decrypt all imports.\par
+\par
+Second Type:\par
+We have jumps that leads outside of main image. It leads to some code and eventualy it jumps to import.\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 4. Emulated opcodes\par
+\cf0\b0\par
+Again, same thing as in SafeCast. This JMP EAX jumps outside of code:\par
+\par
+\f2 004011E3   $ B8 FB0E0000    MOV EAX,0EFB\par
+004011E8   . 59             POP ECX                                  ;  kernel32.7C816D4F\par
+004011E9   . 8D0408         LEA EAX,DWORD PTR DS:[EAX+ECX]\par
+004011EC   . 8B00           MOV EAX,DWORD PTR DS:[EAX]\par
+004011EE   . FFE0           JMP EAX\par
+\f1\par
+And that part of code is called from:\par
+\par
+\f2 00401089  /$ 51             PUSH ECX\par
+0040108A  |. 50             PUSH EAX\par
+0040108B  |. E8 53010000    CALL speed2.004011E3\par
+\f1\par
+And that part is called from different locations:\par
+\par
+\f2 References in speed2:.text to 00401089\par
+Address    Disassembly                               Comment\par
+005B7869   CALL speed2.00401089\par
+005B788E   CALL speed2.00401089\par
+005B78F5   CALL speed2.00401089\par
+005B7921   CALL speed2.00401089\par
+005C08D7   CALL speed2.00401089\par
+005C08EC   CALL speed2.00401089\par
+005C0916   CALL speed2.00401089\par
+005C0923   CALL speed2.00401089\par
+005C0945   CALL speed2.00401089\par
+005C0954   CALL speed2.00401089\par
+005CFDBD   CALL speed2.00401089\par
+005D2243   CALL speed2.00401089\par
+005D2569   CALL speed2.00401089\par
+0065A71D   CALL speed2.00401089\par
+00670CE1   CALL speed2.00401089\par
+006D9D8F   CALL speed2.00401089\par
+006D9EF9   CALL speed2.00401089\par
+006D9FE0   CALL speed2.00401089\par
+006F5D87   CALL speed2.00401089\par
+006FEC11   CALL speed2.00401089\f1\par
+\par
+JMP EAX will jump to procedure which will emulate "stolen" opcode, but it will write original back so emulation is performed only one time. Simply by executing those calls we will force SafeDisc to restore stolen code. there can be several this JMP EAX routines.I found two in this example.\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 5. Nanomites\par
+\cf0\b0\par
+Nanomites are by far the hardest part. Code section of protected program is full of INT 3 opcodes on unusuall places. For example let's check this procedure:\par
+\par
+\f2 006717FF  /$ 8BFF           MOV EDI,EDI                              ;  speed2_.00803F90\par
+00671801  |. 55             PUSH EBP\par
+00671802  |. 8BEC           MOV EBP,ESP\par
+00671804  |. 51             PUSH ECX                                 ;  ntdll.7C91056D\par
+00671805  |. 8365 FC 00     AND DWORD PTR SS:[EBP-4],0\par
+00671809  |. 8D45 FC        LEA EAX,DWORD PTR SS:[EBP-4]\par
+0067180C  |. 50             PUSH EAX\par
+0067180D  |. 68 94B47A00    PUSH speed2_.007AB494                    ;  ASCII "Software\\Microsoft\\Direct3D"\par
+00671812  |. 68 02000080    PUSH 80000002\par
+00671817  |. FF15 10307800  CALL DWORD PTR DS:[783010]\par
+\cf1 0067181D  |. CC             INT3\par
+0067181E  |. CC             INT3\par
+0067181F  |. CC             INT3\par
+00671820  |. CC             INT3\par
+\cf0 00671821  |. 56             PUSH ESI\par
+00671822  |. 8D45 14        LEA EAX,DWORD PTR SS:[EBP+14]\par
+00671825  |. 50             PUSH EAX\par
+00671826  |. FF75 10        PUSH DWORD PTR SS:[EBP+10]\par
+00671829  |. 8D45 10        LEA EAX,DWORD PTR SS:[EBP+10]\par
+0067182C  |. 50             PUSH EAX\par
+0067182D  |. 6A 00          PUSH 0\par
+0067182F  |. FF75 0C        PUSH DWORD PTR SS:[EBP+C]                ;  speed2_.007AB4DC\par
+00671832  |. FF75 FC        PUSH DWORD PTR SS:[EBP-4]\par
+00671835  |. FF15 08307800  CALL DWORD PTR DS:[783008]\par
+0067183B  |. FF75 FC        PUSH DWORD PTR SS:[EBP-4]\par
+0067183E  |. 8BF0           MOV ESI,EAX\par
+00671840  |. FF15 14307800  CALL DWORD PTR DS:[783014]\par
+00671846  |. 85F6           TEST ESI,ESI\par
+00671848  |. 5E             POP ESI\par
+\cf1 00671849  |. CC             INT3\par
+0067184A  |. CC             INT3\cf0\par
+0067184B  |. 8B45 10        MOV EAX,DWORD PTR SS:[EBP+10]\par
+0067184E  |. 3B45 08        CMP EAX,DWORD PTR SS:[EBP+8]\par
+00671851  |. 75 05          JNZ SHORT speed2_.00671858\par
+00671853  |. 33C0           XOR EAX,EAX\par
+00671855  |. 40             INC EAX\par
+00671856  |. EB 02          JMP SHORT speed2_.0067185A\par
+00671858  |> 33C0           XOR EAX,EAX\par
+0067185A  |> C9             LEAVE\par
+0067185B  \\. C2 1000        RETN 10\par
+\f1\par
+INT 3 opcode represent one nanomite. When nanmite is executed, it couse exception. SafeDisc debugger takes control, checks what type of exception occured and where, then it emulate that opcode or it writes original opcode there.\par
+\par
+To better understand how does this work, we need to debug SafeDisc debugger. With SoftICE it is easy to see what is going on, but if we want to do that with Olly, we need to perform small ritual. OK, so this is how I was able to attach olly to SafeDisc debugger:\par
+\par
+- Load main protected file in Olly and break on CreateProcessA. Stop there and wait.\par
+\par
+- Go to "C:\\Documents and Settings\\Your_Name_Here\\Local Settings\\Temp" and open temporary executable in second Olly. Temp exe is hidden with some random name, in my case it is "\cf1 ~e5.0001\cf0 ". Change it's OEP to infinite jump, EB FE. Save changes and close that Olly.\par
+\par
+- Execute CreateProcessA (place bp at the end of API). New process is created and it's looping forever. Wait with this olly.\par
+\par
+- Open again second Olly and attach to new created process. F9 to run, F12 to pause. Restore oly OEP bytes. Minimize this olly.\par
+\par
+- In first Olly, break at IsDebuggerPresent to kill debugger checks by patching "badboy" procedure. After that just run program. Program will wait for second process to attach. It will wait forever (WaitForSingleObject with PUSH -1 parameter) and that is good for us.\par
+\par
+- Now here is confusing part: Open THIRD Olly instance, attach to the FIRST one, and detach FIRST OLLY INSTANCE from main proteced executable. Close third olly and that will close first one too, but protected program will be free in memory.\par
+\par
+- Now, only one Olly is left and that Olly debugs SafeDisc debugger. From here you can continue on WaitForDebugEvent.\par
+\par
+\par
+\par
+When INT 3 is executed, SD debugger checks where exception occured. Then it emulates that opcode. If same nanomite is executed second time, SD debugger will write (WriteProcessMemory) original opcode to main executable. That is probably to gain on speed. Non-stop emulation would slow down game to the death. Since opcode is second time written, there must be some check for that. Check is very simple, it is one CMP AX,1 and after it JNZ DONT_WRITE. Patching jump forces SD to always write opcode. Now I patched jump and played game within Olly a little. then I minimized, dumped, fixed IAT and code. I started dump and it worked! Game loaded perfect, but it crushed after some time what is expected because most of nanomites are not restored. So how to fix that?\par
+\par
+To tell you the truth, I didn't came out with generic solution so I fixed them manually. I attched olly to temp executable and I patched that check CMP AX,1 - JNZ DONT_WRITE. Then I played game a little, tried all kinds of races, tried online game, etc... everything to make sure that I trigered (and by that restored) as much as possible nanomites. Then I dumped code section. After that, I found OEP in instance without SafeDisc debugger and I pasted this dumped code there. Then I fixed imports and stolen opcodes. Now I got second dump from which I could play game. But on exit it would crush. I decide to open dump and check hom many there is nanomites.\par
+\par
+But amounth of CC bytes was huge due to reason that executable has tons of CC bytes that are not nanomites, but leftovers from VC++ compiler. For example:\par
+\par
+\f2 004017C8  \\. C3             RETN\par
+004017C9     CC             INT3\par
+004017CA     CC             INT3\par
+004017CB     CC             INT3\par
+004017CC     CC             INT3\par
+004017CD     CC             INT3\par
+004017CE     90             NOP\par
+004017CF     90             NOP\par
+\par
+005AFD43   . E9 58220000    JMP dumped1.005B1FA0\par
+005AFD48     CC             INT3\par
+005AFD49     CC             INT3\par
+005AFD4A     CC             INT3\par
+005AFD4B     CC             INT3\par
+005AFD4C     CC             INT3\par
+005AFD4D     CC             INT3\par
+005AFD4E     CC             INT3\par
+005AFD4F     CC             INT3\f1\par
+\par
+I wrote script for NOPing those CC bytes, then I found some nanomites and fixed them by examning SafeDisc debugg loop. In SD debugg loop, I would place bp on WaitForDebugEvent, then I would set address in buffer to point on my nanomite. Then in GetThreadContext buffer I would do the same. SafeDisc would decrypt code and I would just copy it. But as said, this is unfinished buisnes. I will have to examne it better or in a updated version of this tutorial, or in a new tutorial with new target (possible higher version of SafeDisc).\par
+\par
+I assume that SafeDisc must have some table with all addresses where are nanomites, table with original code, but I didn't had will to trace trough code whole day. I'm already tired.\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 6. Custom CD check and a final touch\par
+\cf0\b0\par
+I assume that this is not part of SafeDisc protection. I removed original CD and started dump, but it asked me for CD 2. Breakpoint on GetDriveTypeA got me to CD check procedure:\par
+\par
+\f2 005BF120  /$ 83EC 0C        SUB ESP,0C\par
+005BF123  |. 53             PUSH EBX\par
+005BF124  |. 55             PUSH EBP\par
+005BF125  |. 56             PUSH ESI\par
+005BF126  |. 57             PUSH EDI\par
+005BF127  |. B3 41          MOV BL,41\par
+005BF129  |. BF 01000000    MOV EDI,1\par
+005BF12E  |. 885C24 10      MOV BYTE PTR SS:[ESP+10],BL\par
+005BF132  |. FF15 60518F00  CALL DWORD PTR DS:[<&kernel32.GetLogical>; [GetLogicalDrives\par
+005BF138  |. 33ED           XOR EBP,EBP\par
+005BF13A  |. 68 00040000    PUSH 400\par
+005BF13F  |. 894424 18      MOV DWORD PTR SS:[ESP+18],EAX\par
+005BF143  |. 896C24 1C      MOV DWORD PTR SS:[ESP+1C],EBP\par
+005BF147  |. E8 5461FBFF    CALL dump.005752A0\par
+005BF14C  |. 8BF0           MOV ESI,EAX\par
+005BF14E  |. 83C4 04        ADD ESP,4\par
+005BF151  |. 3BF5           CMP ESI,EBP\par
+005BF153  |. C605 7F058000 >MOV BYTE PTR DS:[80057F],0\par
+005BF15A  |. 0F84 A1000000  JE dump.005BF201\par
+005BF160  |> 857C24 14      /TEST DWORD PTR SS:[ESP+14],EDI\par
+005BF164  |. 74 3E          |JE SHORT dump.005BF1A4\par
+005BF166  |. 0FBEC3         |MOVSX EAX,BL\par
+005BF169  |. 50             |PUSH EAX\par
+005BF16A  |. 68 D4387A00    |PUSH dump.007A38D4                      ;  ASCII "%c:\\"\par
+005BF16F  |. 56             |PUSH ESI\par
+005BF170  |. E8 2FD31900    |CALL dump.0075C4A4\par
+005BF175  |. 83C4 0C        |ADD ESP,0C\par
+005BF178  |. 56             |PUSH ESI                                ; /RootPathName = "A:\\"\par
+005BF179  |. FF15 5C518F00  |CALL DWORD PTR DS:[<&kernel32.GetDriveT>; \\GetDriveTypeA\par
+005BF17F  |. 83F8 05        |CMP EAX,5\par
+005BF182  |. 74 0A          |JE SHORT dump.005BF18E\par
+005BF184  |. 8B0D 60DC7900  |MOV ECX,DWORD PTR DS:[79DC60]\par
+005BF18A  |. 85C9           |TEST ECX,ECX\par
+005BF18C  |. 74 16          |JE SHORT dump.005BF1A4\par
+005BF18E  |> 83F8 02        |CMP EAX,2\par
+005BF191  |. 74 11          |JE SHORT dump.005BF1A4\par
+005BF193  |. 8B4C24 10      |MOV ECX,DWORD PTR SS:[ESP+10]\par
+005BF197  |. 51             |PUSH ECX\par
+005BF198  |. E8 03FFFFFF    |CALL dump.005BF0A0\par
+005BF19D  |. 83C4 04        |ADD ESP,4\par
+005BF1A0  |. 84C0           |TEST AL,AL\par
+005BF1A2  |. 75 14          |JNZ SHORT dump.005BF1B8\par
+005BF1A4  |> FEC3           |INC BL\par
+005BF1A6  |. D1E7           |SHL EDI,1\par
+005BF1A8  |. 45             |INC EBP\par
+005BF1A9  |. 83FD 20        |CMP EBP,20\par
+005BF1AC  |. 885C24 10      |MOV BYTE PTR SS:[ESP+10],BL\par
+005BF1B0  |.^7C AE          \\JL SHORT dump.005BF160\par
+005BF1B2  |. 8B7C24 18      MOV EDI,DWORD PTR SS:[ESP+18]\par
+005BF1B6  |. EB 05          JMP SHORT dump.005BF1BD\par
+005BF1B8  |> BF 01000000    MOV EDI,1\par
+005BF1BD  |> 56             PUSH ESI\par
+005BF1BE  |. E8 FD60FBFF    CALL dump.005752C0\par
+005BF1C3  |. 83C4 04        ADD ESP,4\par
+005BF1C6  |. 85FF           TEST EDI,EDI\par
+005BF1C8  |. 74 30          JE SHORT dump.005BF1FA\par
+005BF1CA  |. 881D 7F058000  MOV BYTE PTR DS:[80057F],BL\par
+005BF1D0  |. 881D B0E88600  MOV BYTE PTR DS:[86E8B0],BL\par
+005BF1D6  |. C605 B1E88600 >MOV BYTE PTR DS:[86E8B1],3A\par
+005BF1DD  |. C605 B2E88600 >MOV BYTE PTR DS:[86E8B2],5C\par
+005BF1E4  |. C605 B3E88600 >MOV BYTE PTR DS:[86E8B3],0\par
+005BF1EB  |. E8 4085FFFF    CALL dump.005B7730\par
+005BF1F0  |. 5F             POP EDI\par
+005BF1F1  |. 5E             POP ESI\par
+005BF1F2  |. 5D             POP EBP\par
+005BF1F3  |. 8AC3           MOV AL,BL\par
+005BF1F5  |. 5B             POP EBX\par
+005BF1F6  |. 83C4 0C        ADD ESP,0C\par
+005BF1F9  |. C3             RETN\par
+005BF1FA  |> C605 7F058000 >MOV BYTE PTR DS:[80057F],0\par
+005BF201  |> 5F             POP EDI\par
+005BF202  |. 5E             POP ESI\par
+005BF203  |. 5D             POP EBP\par
+005BF204  |. 32C0           XOR AL,AL\par
+005BF206  |. 5B             POP EBX\par
+005BF207  |. 83C4 0C        ADD ESP,0C\par
+005BF20A  \\. C3             RETN\f1\par
+\par
+This one is 3 times called. If this procedure returns EAX=0, CD check fails. This checks wants some files on CD etc. We just make some patch that will return EAX=1 and problem is solved.\par
+\par
+EA Games usually have couple logo movies that are shown uppon startup. They are very annoying because they cannot be skiped so I patched them too. But that is not part of protection.\par
+\par
+\par
+\par
+\par
+\par
+\par
+\cf1\b 7. The end\par
+\cf0\b0\par
+And that was it. It was not too hard, but again, my dump is not fully rebuilded. Just as much it needs for playing the game. Some nanomites are stil left unresolved but we learned something about SafeDisc protection features.\par
+\par
+Btw, here is script for finding OEP:\par
+\par
+\f2 //======================= START ================================\par
+/*\par
+==============================================================\par
+    SafeDisc v4.0 - Kill debug checks and find OEP script\par
+==============================================================\par
+*/\par
+\par
+var OEP\par
+\par
+find eip,#E9????????CCCC81ECE802000053555657#\par
+mov OEP,$RESULT\par
+\par
+find eip,#751A8B4C243C8B5424348B44242C51525350#\par
+bp $RESULT\par
+esto\par
+bc eip\par
+\par
+add eip,1c\par
+\par
+gpa "IsDebuggerPresent","kernel32.dll"\par
+bp $RESULT\par
+esto\par
+bc eip\par
+rtr\par
+sti\par
+sti\par
+sti\par
+sti\par
+sti\par
+fill eip,1,0c3\par
+\par
+gpa "SetEvent","kernel32.dll"\par
+bphws $RESULT,"x"\par
+esto\par
+bphwc $RESULT\par
+rtr\par
+sti\par
+\par
+sti\par
+sti\par
+add eip,9\par
+\par
+sto\par
+sto\par
+sto\par
+sto\par
+sto\par
+sto\par
+sto\par
+sto\par
+add eip,9\par
+\par
+bp OEP\par
+esto\par
+bc eip\par
+sti\par
+ret\par
+//=========================== END ==============================\f1\par
+\par
+\par
+\par
+\par
+Greats goes to caki, human, evrybody on BIW reversing, ARTEAM, SnD, CRACKMES.DE, ... and to you :)\par
+\par
+\par
+See you all\par
+\par
+\par
+\i haggar\par
+\i0\par
+\par
+\par
+}
+ 

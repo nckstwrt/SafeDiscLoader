@@ -1,0 +1,212 @@
+6) Let's gonna crack Safedisc : Heroes of Might & Magic 7 1.0 US
+-----------------------------------------------------------------
+
+Toolz :
+-------
+
+- Soft-Ice 3.23
+- ProcDump 1.5
+- Frog-Sice (To bypass anti-debugging protection)
+- Sicetool (To patch soft-ice and modify pagein command)
+- HexWorkshop
+- ExeScope
+
+About ICD Files
+----------------
+
+- Run ProcDump
+- Click on PE Editor and open "mm7.icd"
+
+Entry Point => 000CF9AE
+Image Base => 00400000
+
+- Now, you must calculate EIP : Entry Point + Image Base => 004cf9ae
+
+- Click on Sections to get this :
+
+
+Virt. Offset RAW Size RAW Offset
+
+.text 00001000 000DA000 00001000
+.rdata 000DB000 00007000 000DB000
+.data 000E2000 00017000 000E2000
+.rsrc 00B99000 00010000 000F9000
+
+- To dump these sections, you'll need the begin address :
+
+=> Begin address : Image Base + Virtual Offset
+
+.text => 401000
+.rdata => 4db000
+.data => 4e2000
+.rsrc => f99000
+
+
+
+- Run ExeScope, and open "mm7.icd"
+- Click on Imports
+- Choose Kernel, and count how many api are there : here, it's 96, and in hexadecimal : 60h
+- Now, choose User, and count how many api are there : here, it's 33, and in hexadecimal : 33h
+- You must convert decimal's number to hexadeciaml, cause soft-ice doesn't like decimal )
+
+
+
+Dump Sections
+--------------
+
+
+- Run the game
+- Wait for the splash screnn, and press CTRL + D
+- In Sot-Ice, if you're in DPLAYER.DLL, type BPX FREELIBRARY
+- Press F11
+- After a few seconds, you're back in soft-ice
+- Type d 4cf9ae to see if the icd's file is decrypted, if not, press f5, and wait )
+- If ICD's file is decrypted, type BC*
+- Ok, now, you'll dump all sections, except .rdata with pagein command
+- In soft-ice, type :
+
+
+
+pagein 401000 da000 c:\text.bin
+pagein 4e2000 17000 c:\data.bin
+pagein f99000 10000 c:\rsrc.bin
+
+
+About Safedisc's caller
+------------------------
+
+- Type bpx 4cf9ae and press F5
+- What do we get ?
+
+0177:004cf9ae push ebp
+0177:004cf9af mov ebp, esp
+0177:004cf9b1 push ff
+0177:004cf9b3 push 004de160
+0177:004cf9b8 push 004d311c
+0177:004cf9bd mov eax, fs: [00000000]
+0177:004cf9c3 push eax
+0177:004cf9c4 mov fs: [00000000], esp
+0177:004cf9cb sub esp, 58
+0177:004cf9ce push ebx
+0177:004cf9cf push esi
+0177:004cf9d0 push edi
+0177:004cf9d1 mov [ebp-18], esp
+0177:004cf9d4 call [004db164] => Press F8 here to trace it
+
+
+- Now, you must get this :
+
+0177:012678e7 pushad
+0177:012678e8 push 0000004b
+0177:012678ed push 00000000
+0177:012678f2 call [01267908] => Haha, this is our c-dilla's caller, note this, you'll need 
+0177:012678f8 add esp, 08
+0177:012678fb popad
+0177:012678fc jump [01267902]
+
+
+Move .RDATA in .DATA
+---------------------
+
+- Due to .rdata section is read only, you'll need to move this in another sections with M and L command
+
+=> M "RAW Size of .rdata + Image Base" L "Raw Size of .rdata" "Virtual Offset of .data + Image Base"
+
+- In soft-Ice, type :
+
+M 407000 L 7000 4f0000
+
+
+Fix .rdata section for Kernel's API
+------------------------------------
+
+- In soft-ice, type :
+
+R eip 4cf9ae
+.
+a eip
+
+- Now, write this call's fixer :
+
+4CF9AE pushad
+4CF9AF push ebx
+4CF9B0 push 0 => 0 means kernel import
+4CF9B2 call [01267908] => The address tha you've found by traccing
+4CF9B8 add esp, 8
+4CF9BB mov edx, 4F0000 => Where you've moved .rdata
+4CF9C0 cmp eax, [edx]
+4CF9C2 je 4cf9ce
+4CF9C4 inc edx
+4CF9C5 cmp edx, 4f7000
+4CF9CB jne 4cf9c0
+4CF9CD int 03
+4CF9CE mov [edx], ecx
+4CF9D0 popad
+4CF9D1 inc ebx
+4CF9D2 cmp ebx, 60 => 60 is kernel's api in hex
+4CF9D5 jne 4cf9ae
+4CF9D7 int 03
+
+
+
+Fix .rdata section for User's API
+----------------------------------
+
+- In soft-ice, type :
+
+R eip 4cf9ae
+.
+a eip
+
+- Now, write this call's fixer :
+
+4CF9AE pushad
+4CF9AF push ebx
+4CF9B0 push 01 => 01 means user import
+4CF9B2 call [01267908] => The address tha you've found by traccing
+4CF9B8 add esp, 8
+4CF9BB mov edx, 4F0000 => Where you've moved .rdata
+4CF9C0 cmp eax, [edx]
+4CF9C2 je 4cf9ce
+4CF9C4 inc edx
+4CF9C5 cmp edx, 4f7000
+4CF9CB jne 4cf9c0
+4CF9CD int 03
+4CF9CE mov [edx], ecx
+4CF9D0 popad
+4CF9D1 inc ebx
+4CF9D2 cmp ebx, 33 => 33 is user's api in hex
+4CF9D5 jne 4cf9ae
+4CF9D7 int 03
+
+
+- Now, you'll be able to dump .rdata section :
+
+pagein 4f0000 7000 c:\rdata.bin
+
+
+
+Rebuild EXE file
+-----------------
+
+- Now, you have all dumped's cestion, you must rebuild a new "mm7.exe" file
+- Copy "mm7.exe" into a temp directory with all dumped's section
+- Rename "mm7.icd" by "mm7.exe"
+- Run Hexworkshop, and open "mm7.exe"
+- Open "text.bin"
+- Focus on "mm7.exe" and press ALT + F5
+- Enter the RAW Offset of text's section : 1000 (Select at the beginning)
+- Go to Edit, and select "Select Block" and type the Raw Size of .text's section : da000
+- Focus on "text.bin" and go to Editand click on Select All
+- Press CTRL + C
+- Focus on "mm7.exe" and press CTRL + V
+- Do the same thing for rdata, data and rsrc's section )
+- Save the new "mm7.exe"
+
+Rebuild PE
+----------
+
+- Run procdump and choose "Rebuild PE"
+- Choose your new "mm7.exe" and click on OK
+- OK, your EXE is fixed, and you've cracked Safedisc )
+

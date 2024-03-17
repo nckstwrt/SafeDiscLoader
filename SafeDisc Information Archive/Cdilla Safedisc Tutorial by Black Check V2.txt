@@ -1,0 +1,312 @@
+######## Cdilla Safedisc Tutorial by Black Check   #########
+
+
+
+Intro
+-------
+
+Well,since my first tut CDilla changed their shit a little.Time
+to be destructive again... After all CDilla was quite lazy.Our 
+target is Soul Reaver-Legacy of Kain [German].Btw i assume you've 
+already read my first tutorial.Let's do it then...
+
+
+Tools
+-------
+
+-Soul Reaver original CD (this is just a tool,we don't need it later :-P )
+-Softice
+-Adump 1.0
+-Procdump 1.5
+-Frogsice 0.31
+-Hex Workshop 32 
+
+
+#####################
+1. Anti Sice        #
+#####################
+
+Hhmm..very disapointed about this.They didn't even try to
+improve their Sice detection.What's up with you guys?Maybe
+next time.So we'll use Frogsice 0.31 and everything is fine..
+Even my old method of patching the exe and dplayerx.dll still
+works.(but isn't needed with new Frogsice)...
+
+
+
+#####################
+2. Let's dump       #
+#####################
+
+
+Well let's dump then...
+
+The entrypoint of the icd is 4c11e0. R!SC found a nice Breakpoint 
+for dumping: bpx Freelibrary.Run Frogsice set your bpx and start 
+Kain2.exe.Repeat F5,u 4c11e0 untill the code gets decrypted.Now F12
+and assemle a jmp eip.Now F5 and make a full dump with Procdump (1.5!).
+We need a good rdata section so we'll make a partial dump,too.Now
+rip the rdata out of the partial dump (moved by 1800h bytes) and
+create rdata.dat.
+
+
+######################
+3. Fixing the .rdata #
+######################
+
+At least they changed their ApiCall System a little.Though 
+it's not that awesome,my old method won't work anymore.
+
+
+x:       pushad
+         push 00000000   | Function number
+         push 00000000   | Dll   number  
+         call[x+21]
+         add esp,8
+         popad
+         jmp[x+13]
+
+x+1b:    dd ApiAddress  (=f700c0)
+x+1f:    dw ???
+x+21:    dd ApiFuckUpCallAddress
+x+25:    pushad
+         push 00000001
+         push 00000000
+         call[...]
+         .
+         .
+         .
+            
+
+In the older version the call returned the Addresses
+we needed in eax and ecx.That's a lame bug that has
+been fixed.The real Api Address is still copied to
+code seg.So we'll let it decrypt all calls,dump the
+whole code and code a little ApiFixup.We have 4ah
+Kernel and 20h User imports here.
+
+3.1 Decrypting everything
+--------------------------
+
+Start Adump now.
+Put a breakpoint on the the entrypoint and run.Now
+assemble:
+
+4c11e0: push ebx       | manualy set EBX to 0 !!!
+        push 00000000
+        call f700c0    | the CDilla Apicall
+        inc  ebx
+        cmp  ebx,4a    | number of Kernel imports
+        jnz 4c11e0
+        jmp eip
+
+
+Let it run.Change the push to 1 and the cmp ebx to 20.Set ebx back to
+0 and let it run again.Now all the Addresses are in the code.
+
+
+
+3.2 Dumping the ApiCall code
+--------------------------------
+
+First we need to find the beginning of this crap.Step into
+the first api call and scroll up.It looks like this:
+
+
+F94540:  pushad
+         push 0000000
+         push 0000000    | Kernel
+         call [...]
+
+Write down the Address of the first pushad.You'll have
+to use the 'u xxx' command to get it displayed right.
+Now scroll down to the first User call:
+
+
+F95004: pushad
+        push 00000000
+        push 00000001    | User
+        call[...]
+
+Write down,too.Btw you can get the number of exports this way.
+Just scroll up a little and you'll see that at the last Kernel
+import 00000049 is pushed.Scroll down to the last User import
+and write down the Address where the zero bytes start.
+
+For some strange reason we need to dump this in two parts:
+
+m F94540 l ac4 828de000
+m F95004 l 49f 828df000
+              (Adump mem)
+
+Write the files to disc and call them Kernel.dat and
+User.dat.
+
+
+
+3.3 Our ApiCall Fixup
+----------------------
+
+Now let's code a little fixup that takes the right import
+addresses and puts them in our rdata dump.Cdillafx.exe takes
+three files:
+
+Kernel.dat
+User.dat
+Rdata.dat
+
+and generates Rdata.fix,which is a working rdata section.I coded 
+this in about 15 minutes so you'll have to put some values there
+by hand...
+
+
+
+################# CDillafx.c ################################
+
+
+#include <stdio.h>
+#include <io.h>
+#include <alloc.h>
+#include <fcntl.h>
+#include <process.h>
+#include <sys\stat.h>
+
+typedef unsigned char byte;
+typedef unsigned long u32;
+
+byte *Kernel,*User,*Rdata;
+
+u32  KernelOff=0xf94540; // we wrote this down before
+u32  UserOff  =0xf95004;
+u32  Offset=0;
+u32  GoodAdr,BadAdr;
+int  Temp,k=0,u=0;
+int  KernelSize=2756;   // size of our files
+int  UserSize=1183;
+int  RdataSize=14336;
+
+void Load_File(byte*File,byte*Buf,unsigned l)
+{
+   int handle, bytes;
+
+    if ( (handle=open(File, O_RDONLY | O_BINARY,
+		 S_IWRITE | S_IREAD)) == -1)
+   {
+      printf("Error opening file.. ");
+      exit(1);
+   }
+
+   if (read(handle,Buf,l) == -1)
+   {
+      printf("Read failed.\n");
+      exit(1);
+   }
+ close(handle);
+}
+
+int Change_Entry(u32 Good,u32 Bad)
+ {
+  u32 Entry,o;
+
+  for(o=0;o<RdataSize;o++)
+   {
+    memmove(&Entry,Rdata+o,4);
+
+    if(Entry==Bad)
+     {
+      memmove(Rdata+o,&Good,4);
+      return 0;
+     }
+  }
+ printf("\nFixup failed for %x",Bad);
+ return 1;
+}
+
+void Write_File(void)
+ {
+  int handle;
+
+  if ( (handle=open("Rdata.fix", O_RDWR | O_BINARY | O_CREAT,
+		 S_IWRITE | S_IREAD)) == -1)
+   {
+      printf("Error opening file.. ");
+      exit(1);
+   }
+
+   if (write(handle,Rdata,RdataSize) == -1)
+   {
+      printf("Write failed.\n");
+      exit(1);
+   }
+ close(handle);
+}
+
+
+void main(void)
+ {
+  Kernel=(byte*) malloc(10000);
+  User  =(byte*) malloc(10000); // you may want to change this
+  Rdata =(byte*) malloc(20000);
+
+  Load_File("Kernel.dat",Kernel,KernelSize);
+  Load_File("User.dat",User,UserSize);
+  Load_File("Rdata.dat",Rdata,RdataSize);
+
+  for(;;)
+   {
+    memmove(&Temp,Kernel,2);
+    if(Temp!=0x6860) break;             // are we finished?
+    memmove(&GoodAdr,Kernel+0x1b,4);    // Get Import Address
+    Change_Entry(GoodAdr,KernelOff);    // And replace it
+    KernelOff+=0x25;                    // Entries are 25h bytes long 
+    Kernel+=0x25;
+    k++;
+   }
+
+  for(;;)
+   {
+    memmove(&Temp,User,2);
+    if(Temp!=0x6860) break;             // are we finished?
+    memmove(&GoodAdr,User+0x1b,4);
+    Change_Entry(GoodAdr,UserOff);
+    UserOff+=0x25;
+    User+=0x25;
+    u++;
+   }
+   Write_File();
+
+   printf("\n%x Kernel imports fixed",k);
+   printf("\n%x User imports fixed\n",u);
+
+   printf("\nCheckmate Cdilla!");
+
+ }
+
+
+
+
+
+Compile it with any Dos C compiler and let it run.Paste
+rdata.fix into the full dump and everything is fine.. =)
+
+
+Use Procdump as described in my first tut to make it
+W9x compatible.Checkmate now...
+
+
+
+################
+4. The end     #
+################
+
+
+Well,if CDilla decides to really improve their
+ridiculous protection I'll come up with a new Essay including
+a list of all Safedisc Gamez including version numbers.But
+not now....I'll rewrite this in German soon.
+
+
+This tut is dedicated to White Tiger who sits in jail...
+
+
+Interresting stuff goes to black_check@yahoo.de
