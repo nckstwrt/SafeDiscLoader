@@ -1,7 +1,10 @@
 #ifdef _DEBUG
 #define LOGGING
 #define EJECT_DEBUGGER
+#define EJECT_DEBUGGER_TIMEOUT INFINITE
 #endif
+
+#define MINIMUM_SAFEDISC_SUBVERSION 70
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -51,17 +54,14 @@ BOOL WINAPI WaitForDebugEvent_Hook(LPDEBUG_EVENT lpDebugEvent, DWORD dwMilliseco
 {
 	if (hDebuggerThread != INVALID_HANDLE_VALUE && hDebuggerThread == GetCurrentThread() && dwMilliseconds == INFINITE)
 	{
-		log("WaitForSingleObject_Hook");
 		while (true)
 		{
-			BOOL ret = WaitForDebugEvent_Orig(lpDebugEvent, 20000);
+			BOOL ret = WaitForDebugEvent_Orig(lpDebugEvent, EJECT_DEBUGGER_TIMEOUT);
 			if (ret)
 				return ret;
 
-			MessageBox(0, "We gonna kill now that debugger now", "Killer", 0);
+			MessageBox(0, "We gonna kill that debugger now", "Killer", 0);
 			((DebugActiveProcess_typedef)GetProcAddress(LoadLibrary("Kernel32.dll"), "DebugActiveProcessStop"))(dwSavedProcessId);
-
-			//DebugActiveProcessStop(dwSavedProcessId);
 			ExitProcess(0);
 		}
 	}
@@ -82,7 +82,6 @@ BOOL WINAPI DebugActiveProcess_Hook(DWORD dwProcessId)
 
 BOOL Patch2728Installed = FALSE;
 BOOL PatchCheckFailed = FALSE;
-BYTE* CopyFunctionLocation = NULL;
 DWORD Version, SubVersion, Revision;
 DWORD ItemA = 0;
 DWORD ItemE_1 = 0;
@@ -183,7 +182,6 @@ TableOffset tableOffsets_2_70_30[] = {
 { 0x13C, 0x42E0 } };
 
 
-DWORD OurCopyFunction_CallCount = 0;
 DWORD AuthServDataAddr;
 DWORD AuthServStartAddr;
 DWORD AuthServEndAddr;
@@ -243,10 +241,6 @@ void SetCRCTable()
 
 void WINAPI OurCopyFunction()
 {
-	log("OurCopyFunction Call: %d\n", OurCopyFunction_CallCount);
-
-	DWORD ItemA = *(DWORD *)(CopyFunctionLocation + 2);
-
 	// Let's emulate the CopyFunction
 	DWORD ItemA_AddressPointedTo = *(DWORD*)ItemA;
 	DWORD ItemA_AddressPointedTo2 = *(DWORD*)(ItemA_AddressPointedTo + 0xc);
@@ -301,6 +295,10 @@ __declspec(naked) void StealCRCTable()
 
 HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 {
+	//log("LoadLibraryA_Hook: %s\n", lpLibFileName == NULL ? "NULL" : lpLibFileName);
+	//if (stricmp(lpLibFileName, "rasapi32.dll") == 0)
+		//while(true) { ; }
+
 	HMODULE ret = LoadLibraryA_Orig(lpLibFileName);
 	
 	if (lpLibFileName)
@@ -324,7 +322,7 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 			// Check for SecServ.dll
 			if (strstr(lpLibFileName, "~df394b.tmp"))
 			{
-				if (bReadVersion == TRUE && Version == 2 && SubVersion < 90 && SubVersion >= 70)
+				if (bReadVersion == TRUE && Version == 2 && SubVersion < 90 && SubVersion >= MINIMUM_SAFEDISC_SUBVERSION)
 				{
 					PIMAGE_DOS_HEADER pidh = (PIMAGE_DOS_HEADER)ret;
 					PIMAGE_NT_HEADERS pinh = (PIMAGE_NT_HEADERS)((BYTE*)pidh + pidh->e_lfanew);
@@ -342,9 +340,6 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 					log("FirstMatch: %X SecondMatch: %X\n", firstMatch, secondMatch);
 					ItemA = *(DWORD*)(secondMatch + 6);
 					log("Item A: %08X (Key Offset to be referenced and used by our copy function)\n", ItemA);
-
-					if (CopyFunctionLocation)
-						*(DWORD *)(CopyFunctionLocation + 2) = ItemA;
 
 					// Item C
 					log("\n------------\n");
@@ -370,7 +365,7 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 						StealCRCTable_JMPBack = CRCHookLocation + 0x9;
 					}
 					else
-						log("Cannot find CRC Hook Location");
+						log("Cannot find CRC Hook Location\n");
 
 					WriteProtectedDWORD(ItemCLocation1stAddr, 0);
 					WriteProtectedDWORD(ItemCLocation2ndAddr, (DWORD)&OurCopyFunction);
@@ -380,7 +375,7 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 			}
 			else
 			{
-				if (bReadVersion == TRUE && Version == 2 && SubVersion < 90 && SubVersion >= 70 && PatchCheckFailed == FALSE && Patch2728Installed == FALSE && CopyFunctionLocation != NULL)
+				if (bReadVersion == TRUE && Version == 2 && SubVersion < 90 && SubVersion >= MINIMUM_SAFEDISC_SUBVERSION && PatchCheckFailed == FALSE && Patch2728Installed == FALSE)
 				{
 					// The only other tmp dll that gets loaded is AuthServ.dll
 					PIMAGE_DOS_HEADER pidh = (PIMAGE_DOS_HEADER)ret;
@@ -444,16 +439,19 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 							ItemE_3 = ((DWORD)ret) + 0x3333A;
 						}
 					
-						LogKey("First Key", ItemE_1);
-						LogKey("Second Key", ItemE_2);
-						LogKey("Third Key", ItemE_3);
-
-						for (int i = 0; i < 1024; i++)
+						if (ItemE_1 != 0 && ItemE_2 != 0 && ItemE_3 != 0)
 						{
-							*((BYTE*)(ItemE_2 + i)) ^= *((BYTE*)(ItemE_1 + i)) ^ *((BYTE*)(ItemE_3 + i));
-						}
+							LogKey("First Key", ItemE_1);
+							LogKey("Second Key", ItemE_2);
+							LogKey("Third Key", ItemE_3);
 
-						LogKey("New Second Key", ItemE_2);
+							for (int i = 0; i < 1024; i++)
+							{
+								*((BYTE*)(ItemE_2 + i)) ^= *((BYTE*)(ItemE_1 + i)) ^ *((BYTE*)(ItemE_3 + i));
+							}
+
+							LogKey("New Second Key", ItemE_2);
+						}
 
 						DWORD ItemA_AddressPointedTo = *(DWORD*)ItemA;
 						DWORD ItemA_AddressPointedTo2 = *(DWORD*)(ItemA_AddressPointedTo + 0xc);
@@ -463,7 +461,8 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 						log("ItemA_1Address: %08X ItemA_2Address: %08X ItemA_3Address: %08X\n", ItemA_1Address, ItemA_2Address, ItemA_3Address);
 
 						// Only set the new Second Key here (it will then go through the 3 CRC processes)
-						memcpy((DWORD*)ItemA_2Address, (DWORD*)ItemE_2, 1024);
+						if (ItemE_2 != 0)
+							memcpy((DWORD*)ItemA_2Address, (DWORD*)ItemE_2, 1024);
 
 						AuthServDataAddr = StartAddr + GetSectionByName(StartAddr, ".data")->VirtualAddress;
 						AuthServStartAddr = StartAddr;
@@ -508,11 +507,13 @@ NTSTATUS NTAPI NtDeviceIoControlFile_Hook(HANDLE FileHandle, HANDLE Event, PIO_A
 
 HANDLE WINAPI CreateFileA_Hook(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) 
 {
-	//char szFileName[MAX_PATH];
-	//GetModuleFileName(NULL, szFileName, MAX_PATH);
-	// log("%s: CreateFileA: %s\n", szFileName, lpFileName);
+/*
+	char szFileName[MAX_PATH];
+	GetModuleFileName(NULL, szFileName, MAX_PATH);
+	log("%s: CreateFileA: %s\n", szFileName, lpFileName);
+*/
 
-    if (!lstrcmpiA(lpFileName, "\\\\.\\Secdrv") || !lstrcmpiA(lpFileName, "\\\\.\\Global\\SecDrv"))
+	if (!lstrcmpiA(lpFileName, "\\\\.\\Secdrv") || !lstrcmpiA(lpFileName, "\\\\.\\Global\\SecDrv"))
     {
         // we need to return a handle when secdrv is opened, so we just open the null device to get an unused handle
         HANDLE dummyHandle = CreateFileA_Orig("NUL", GENERIC_READ, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -621,28 +622,6 @@ BOOL WINAPI CreateProcessW_Hook(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
   return TRUE;
 }
 
-// Only useful as SafeDisc sometimes loops through to find the DLLs real address (rather than the hooked Shim address)
-DWORD FindRealAddress(const char *szDLLName, const char *szProcName)
-{
-	DWORD ret = -1L;
-	HMODULE lib = LoadLibraryEx(szDLLName, NULL, DONT_RESOLVE_DLL_REFERENCES);
-	PIMAGE_NT_HEADERS header = (PIMAGE_NT_HEADERS)((BYTE *)lib + ((PIMAGE_DOS_HEADER)lib)->e_lfanew);
-	PIMAGE_EXPORT_DIRECTORY exports = (PIMAGE_EXPORT_DIRECTORY)((BYTE *)lib + header->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-	DWORD* names = (DWORD*)((int)lib + exports->AddressOfNames);
-	WORD* ords = (WORD*)((int)lib + exports->AddressOfNameOrdinals);
-	DWORD* funcs = (DWORD*)((int)lib + exports->AddressOfFunctions);
-	for (DWORD i = 0; i < exports->NumberOfNames; i++)
-	{
-		if (stricmp(szProcName, (char *)lib + (DWORD)names[i]) == 0)
-		{
-			// TODO: Worry about Ordinalbase ???
-			ret = ((DWORD)lib) + (DWORD)funcs[ords[i]];
-			break;
-		}
-	}
-	return ret;
-}
-
 DWORD WINAPI HookThread(HINSTANCE hModule)
 {
 #ifdef LOGGING
@@ -650,7 +629,6 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
     AllocConsole();
     freopen("CONOUT$", "w", stdout); 
 	log("TRIED TO ALLOC A CONSOLE\n");
-	//MessageBox(0, "Hello", "Hello", 0);
 #endif
 
 	log("Hooks Starting\n");
@@ -660,10 +638,31 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
     MH_STATUS status = MH_Initialize();
 
     DisableThreadLibraryCalls(hModule);
+
     if (status != MH_OK)
     {
         log("Minhook init failed!\n");
         return 0;
+    }
+
+	// No longer fail if we can't hook CreateProcess - it might not be needed and DxWnd can make it unhookable if it hooks it when DisableGameUX is enabled
+	if ((status = MH_CreateHookApi(L"kernel32", "CreateProcessA", &CreateProcessA_Hook, reinterpret_cast<LPVOID*>(&CreateProcessA_Orig))) != MH_OK) 
+    {
+        log("Unable to hook CreateProcessA: %d\n", status);
+		//return false;
+    }
+
+	/*DWORD CreateProcessA_Address = FindRealAddress("kernel32.dll", "CreateProcessA");
+	if ((status = MH_CreateHook((LPVOID)CreateProcessA_Address, &CreateProcessA_Hook, reinterpret_cast<LPVOID*>(&CreateProcessA_Orig))) != MH_OK) 
+	{
+		log("Unable to hook CreateProcessA: %d\n", status);
+		//return false;
+	}*/
+
+	if (MH_CreateHookApi(L"kernel32", "CreateProcessW", &CreateProcessW_Hook, reinterpret_cast<LPVOID*>(&CreateProcessW_Orig)) != MH_OK) 
+    {
+        log("Unable to hook CreateProcessW\n");
+        // return false;
     }
 
     if (MH_CreateHookApi(L"ntdll", "NtDeviceIoControlFile", &NtDeviceIoControlFile_Hook, reinterpret_cast<LPVOID*>(&NtDeviceIoControlFile_Orig)) != MH_OK) 
@@ -678,19 +677,6 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
         return false;
     }
 
-	if (MH_CreateHookApi(L"kernel32", "CreateProcessA", &CreateProcessA_Hook, reinterpret_cast<LPVOID*>(&CreateProcessA_Orig)) != MH_OK) 
-    {
-        log("Unable to hook CreateProcessA\n");
-        return false;
-    }
-
-	if (MH_CreateHookApi(L"kernel32", "CreateProcessW", &CreateProcessW_Hook, reinterpret_cast<LPVOID*>(&CreateProcessW_Orig)) != MH_OK) 
-    {
-        log("Unable to hook CreateProcessW\n");
-        return false;
-    }
-
-	
 	if (MH_CreateHookApi(L"kernel32", "LoadLibraryA", &LoadLibraryA_Hook, reinterpret_cast<LPVOID*>(&LoadLibraryA_Orig)) != MH_OK) 
     {
         log("Unable to hook LoadLibraryA\n");
@@ -714,12 +700,12 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
     if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK)
     {
         log("Enable Hooks Failed!\n");
-        return 0;
+        return false;
     }
 
 	log("Hooks Complete!\n");
 
-    return 0;
+    return true;
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
@@ -727,7 +713,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call)  
     {
     case DLL_PROCESS_ATTACH:
-		HookThread(hModule);
+		if (!HookThread(hModule))
+			::MessageBox(NULL, "Failed to hook!", "SafeDiscLoader", MB_ICONERROR);
 		break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:

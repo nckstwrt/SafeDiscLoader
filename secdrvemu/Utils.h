@@ -186,4 +186,45 @@ BOOL WriteProtectedDWORD(DWORD Addr, DWORD Value)
 	return bRet;
 }
 
+// Only useful as SafeDisc sometimes loops through to find the DLLs real address (rather than the hooked Shim address)
+DWORD FindRealAddress(const char *szDLLName, const char *szProcName)
+{
+	DWORD ret = -1L;
+	HMODULE lib = LoadLibraryEx(szDLLName, NULL, DONT_RESOLVE_DLL_REFERENCES);
+	PIMAGE_NT_HEADERS header = (PIMAGE_NT_HEADERS)((BYTE *)lib + ((PIMAGE_DOS_HEADER)lib)->e_lfanew);
+	PIMAGE_EXPORT_DIRECTORY exports = (PIMAGE_EXPORT_DIRECTORY)((BYTE *)lib + header->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+	DWORD* names = (DWORD*)((int)lib + exports->AddressOfNames);
+	WORD* ords = (WORD*)((int)lib + exports->AddressOfNameOrdinals);
+	DWORD* funcs = (DWORD*)((int)lib + exports->AddressOfFunctions);
+	for (DWORD i = 0; i < exports->NumberOfNames; i++)
+	{
+		if (stricmp(szProcName, (char *)lib + (DWORD)names[i]) == 0)
+		{
+			// TODO: Worry about Ordinalbase ???
+			ret = ((DWORD)lib) + (DWORD)funcs[ords[i]];
+			break;
+		}
+	}
+	return ret;
+}
+
+void EnableDebugPriv()
+{
+    HANDLE hToken;
+    LUID luid;
+    TOKEN_PRIVILEGES tkp;
+ 
+    OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
+ 
+    LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid);
+ 
+    tkp.PrivilegeCount = 1;
+    tkp.Privileges[0].Luid = luid;
+    tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+ 
+    AdjustTokenPrivileges(hToken, false, &tkp, sizeof(tkp), NULL, NULL);
+ 
+    CloseHandle(hToken);
+}
+
 #endif

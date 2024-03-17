@@ -2,6 +2,9 @@
 #define LOGGING
 #endif
 
+#define MINIMUM_SAFEDISC_SUBVERSION 70
+#define SECDRVDLL_NAME "secdrvemu_v1.1.dll"
+
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,12 +67,12 @@ void LoadResource(DWORD ResID, BYTE **pBuf, DWORD *pSize)
     *pBuf = (BYTE *)LockResource(myResourceData);
 }
 
-int InjectDrvMgt(DWORD pid)
+void InjectDrvMgt(DWORD pid)
 {
 	HANDLE hProcess;
 	char szSecDrvEmuDLLPath[MAX_PATH];
 	GetTempPath(MAX_PATH, szSecDrvEmuDLLPath);
-	strcat(szSecDrvEmuDLLPath, "secdrvemu.dll");
+	strcat(szSecDrvEmuDLLPath, SECDRVDLL_NAME);
 	if (AlwaysCreateDLLs || GetFileAttributes(szSecDrvEmuDLLPath) == -1L)
 	{
 		BYTE *pBuf;
@@ -125,8 +128,23 @@ int InjectDrvMgt(DWORD pid)
     // Clean up
     CloseHandle(hNewThread);
     CloseHandle(hProcess);
+}
 
-	return 0;
+void InjectDCEAPIHook(DWORD pid)
+{
+	if (GetFileAttributes("DCEAPIHook.dll") != -1L)
+	{
+		HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+		LPVOID loadLibraryAddr = (LPVOID)GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+		char szPath[MAX_PATH];
+		GetFullPathNameA("DCEAPIHook.dll", MAX_PATH, szPath, NULL);
+		LPVOID newMemory = (LPVOID)VirtualAllocEx(hProcess, NULL, strlen(szPath)+1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		WriteProcessMemory(hProcess, newMemory, szPath, strlen(szPath)+1, NULL);
+		HANDLE hNewThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibraryAddr, newMemory, NULL, NULL);
+		WaitForSingleObject(hNewThread, INFINITE);
+		CloseHandle(hNewThread);
+		CloseHandle(hProcess);
+	}
 }
 
 void InjectAndHope(const char *lpApplicationName, bool bShowPopUp = true)
@@ -143,6 +161,8 @@ void InjectAndHope(const char *lpApplicationName, bool bShowPopUp = true)
 			exitlog("Failed to CreateProcess: %s\r\n(ErrCode: %d)\n", lpApplicationName, GetLastError());
 
 		InjectDrvMgt(pi.dwProcessId);
+
+		InjectDCEAPIHook(pi.dwProcessId);
 
 		ResumeThread(pi.hThread);
 
@@ -261,17 +281,18 @@ int main(int argc, char *argv[])
 
 #ifdef _DEBUG
 	//char *szPath = "C:\\Program Files (x86)\\EA GAMES\\The Sims 2\\TSBin\\Sims2.exe -w";
-	char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
+	//char *szPath = "C:\\Games\\Football Manager 2005\\fm2005.exe";
 	//char *szPath = "C:\\Games\\Call of Duty 4 - Modern Warfare\\iw3sp.exe";
 	//char *szPath = "C:\\Games\\BF1942\\BF1942.exe";
 	//char *szPath = "C:\\Games\\HPCOS\\System\\Game.Exe";
-	//char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
+	char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
 	//char *szPath = "C:\\Games\\Nightfire\\Bond.exe";
 	//char *szPath = "C:\\Games\\Mafia\\Game.exe";
 	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed_Orig.exe";
 	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed.exe";
 	//char *szPath = "F:\\Games\\Harry Potter and the Chamber of Secrets\\system\\Game.exe";
 	//char *szPath = "C:\\Games\\Madden NFL 2003\\mainapp.exe";
+	//char *szPath = "C:\\Games\\Kohan\\Kohan.exe";
 	//char *szPath = "C:\\Games\\Hitman - Codename 47\\Hitman.exe";
 #else
 	char szPathBuffer[MAX_PATH];
@@ -397,7 +418,7 @@ int main(int argc, char *argv[])
 	DWORD SafeDiscVersion, SafeDiscSubVersion, SafeDiscRevision;
 	if (GetSafeDiscVersionFromBuffer((BYTE*)v2, NumberOfBytesRead, &SafeDiscVersion, &SafeDiscSubVersion, &SafeDiscRevision))
 	{
-		if (SafeDiscVersion == 2 && SafeDiscSubVersion < 90 && SafeDiscSubVersion >= 70)
+		if (SafeDiscVersion == 2 && SafeDiscSubVersion < 90 && SafeDiscSubVersion >= MINIMUM_SAFEDISC_SUBVERSION)
 		{
 			log("SafeDisc Version 2.7 or 2.8! Doing our own loader!\n");
 			InjectAndHope(lpApplicationName, false);
@@ -479,6 +500,8 @@ int main(int argc, char *argv[])
 	BYTE unk_40209B[0x9b] = { 0 };		// 0x9b = 155
 
 	InjectDrvMgt(pi.dwProcessId);
+
+	InjectDCEAPIHook(pi.dwProcessId);
 
 	bSuccess = VirtualProtectEx(pi.hProcess, lpAddress, 0x9B, 0x40, &flOldProtect);
 	bSuccess = ReadProcessMemory(pi.hProcess, lpAddress, &unk_40209B, 0x9B, 0);
