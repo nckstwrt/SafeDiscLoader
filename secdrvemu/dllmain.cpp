@@ -181,7 +181,6 @@ TableOffset tableOffsets_2_70_30[] = {
 { 0x128, 0x1D50 },
 { 0x13C, 0x42E0 } };
 
-
 DWORD AuthServDataAddr;
 DWORD AuthServStartAddr;
 DWORD AuthServEndAddr;
@@ -255,10 +254,9 @@ void WINAPI OurCopyFunction()
 }
 
 // Grabber function to jump to in the debugger after getting the right CRC to dump the table for use here 
-// (will need to manually change the address of the table in the debugger)
 void WINAPI Grabber()
 {
-	BYTE *pCRCTable = (BYTE*)0x012DDBA0;
+	BYTE *pCRCTable = (BYTE*)CRCTableAddress;
 	for (int i = 0; i != 16*23; i+=4)
 	{
 		if (pCRCTable[i] == 0xA5 && pCRCTable[i+1] == 0xA5 && pCRCTable[i+2] == 0xA5 && pCRCTable[i+3] == 0xA5)
@@ -272,6 +270,8 @@ void WINAPI Grabber()
 			log("{ 0x%03X, 0x%X },\n", i, loc - AuthServDataAddr);
 		}
 	}
+	log("Press any key...");
+	getch();
 }
 
 DWORD StealCRCTable_2ndFunc;
@@ -284,7 +284,11 @@ __declspec(naked) void StealCRCTable()
 		mov eax, dword ptr ds:[edx+0x18]
 		mov [CRCTableAddress], eax
 
+#ifdef USE_CRC_GRABBER
+		call Grabber;
+#else
 		call SetCRCTable;
+#endif
 
 		mov eax, [StealCRCTable_2ndFunc]
 		call eax
@@ -412,6 +416,7 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 					log("Item D Part 2 - LocationAddress from the code: %08X\n", ItemDLocationPart2_AddressFromTheCode);
 					DWORD ItemDLocationPart2_LocationAtAddressFromTheCodePlus4 = ItemDLocationPart2_LocationAtAddressFromTheCode + 4;
 
+					// Removes all CD Checks
 					WriteProtectedDWORD(ItemDLocationPart2_LocationAtAddressFromTheCodePlus4, ItemDLocationPart1);	// Redirect the CD Checks to give the right result
 
 					// Item E - TODO: Currently hardcoded
@@ -432,7 +437,7 @@ HMODULE WINAPI LoadLibraryA_Hook(LPCSTR lpLibFileName)
 							ItemE_2 = ((DWORD)ret) + 0x32DCD;
 							ItemE_3 = ((DWORD)ret) + 0x33322;
 						}
-						if (SubVersion == 70 && Revision == 30)	// Mafia
+						if (SubVersion == 70 && Revision == 30)	// Mafia, MS Combat Flight Simulator 3
 						{
 							ItemE_1 = ((DWORD)ret) + 0x32890;
 							ItemE_2 = ((DWORD)ret) + 0x32DE5;
@@ -521,7 +526,10 @@ HANDLE WINAPI CreateFileA_Hook(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD d
             log("unable to obtain a dummy handle for secdrv");
         return dummyHandle;
     }
-    return CreateFileA_Orig(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    
+	//CreateFileA_Orig
+
+	return CreateFileA_Orig(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
 
 int InjectSelf(DWORD pid)
@@ -652,13 +660,6 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
 		//return false;
     }
 
-	/*DWORD CreateProcessA_Address = FindRealAddress("kernel32.dll", "CreateProcessA");
-	if ((status = MH_CreateHook((LPVOID)CreateProcessA_Address, &CreateProcessA_Hook, reinterpret_cast<LPVOID*>(&CreateProcessA_Orig))) != MH_OK) 
-	{
-		log("Unable to hook CreateProcessA: %d\n", status);
-		//return false;
-	}*/
-
 	if (MH_CreateHookApi(L"kernel32", "CreateProcessW", &CreateProcessW_Hook, reinterpret_cast<LPVOID*>(&CreateProcessW_Orig)) != MH_OK) 
     {
         log("Unable to hook CreateProcessW\n");
@@ -671,12 +672,21 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
         return 0;
     }
 
-    if (MH_CreateHookApi(L"kernel32", "CreateFileA", &CreateFileA_Hook, reinterpret_cast<LPVOID*>(&CreateFileA_Orig)) != MH_OK) 
-    {
-        log("Unable to hook CreateFileA\n");
-        return false;
-    }
-
+	// If using DCEAPIHook then hook using Kernel32's Export table instead - this ensures DCE will hook the same CreateFileA pointer as SafeDisc
+	if (GetFileAttributes("DCEAPIHook.dll") != -1L)
+	{
+		CreateFileA_Orig = (HANDLE(WINAPI*)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE))(FindRealAddress("kernel32.dll", "CreateFileA"));
+		FindRealAddress("kernel32.dll", "CreateFileA", (DWORD)&CreateFileA_Hook);
+	}
+	else
+	{
+		if (MH_CreateHookApi(L"kernel32", "CreateFileA", &CreateFileA_Hook, reinterpret_cast<LPVOID*>(&CreateFileA_Orig)) != MH_OK) 
+		{
+			log("Unable to hook CreateFileA\n");
+			return false;
+		}
+	}
+	
 	if (MH_CreateHookApi(L"kernel32", "LoadLibraryA", &LoadLibraryA_Hook, reinterpret_cast<LPVOID*>(&LoadLibraryA_Orig)) != MH_OK) 
     {
         log("Unable to hook LoadLibraryA\n");
@@ -704,6 +714,12 @@ DWORD WINAPI HookThread(HINSTANCE hModule)
     }
 
 	log("Hooks Complete!\n");
+
+	if (GetFileAttributes("DCEAPIHook.dll") != -1L)
+	{
+		LoadLibrary("DCEAPIHook.dll");
+		log("Loading DCEAPIHook.dll!\n");
+	}
 
     return true;
 }

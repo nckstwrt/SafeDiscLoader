@@ -186,8 +186,74 @@ BOOL WriteProtectedDWORD(DWORD Addr, DWORD Value)
 	return bRet;
 }
 
-// Only useful as SafeDisc sometimes loops through to find the DLLs real address (rather than the hooked Shim address)
-DWORD FindRealAddress(const char *szDLLName, const char *szProcName)
+HRESULT PatchIat(HMODULE Module, PSTR ImportedModuleName, PSTR ImportedProcName, PVOID AlternateProc, PVOID *OldProc)
+{
+	#define PtrFromRva( base, rva ) ( ( ((DWORD)( PBYTE ) base) ) + ((DWORD)rva) )
+	PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER) Module;
+	PIMAGE_NT_HEADERS NtHeader; 
+	PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor;
+	UINT Index;
+
+	NtHeader = (PIMAGE_NT_HEADERS) PtrFromRva(DosHeader, DosHeader->e_lfanew);
+	
+	if (IMAGE_NT_SIGNATURE != NtHeader->Signature)
+		return HRESULT_FROM_WIN32( ERROR_BAD_EXE_FORMAT );
+
+	ImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR) PtrFromRva(DosHeader, NtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+
+	for ( Index = 0; ImportDescriptor[ Index ].Characteristics != 0; Index++)
+	{
+		PSTR dllName = (PSTR) PtrFromRva(DosHeader, ImportDescriptor[Index].Name);
+
+		if (_strcmpi(dllName, ImportedModuleName) == 0)
+		{
+			PIMAGE_THUNK_DATA Thunk;
+			PIMAGE_THUNK_DATA OrigThunk;
+
+			if (!ImportDescriptor[ Index ].FirstThunk || !ImportDescriptor[ Index ].OriginalFirstThunk)
+				return E_INVALIDARG;
+
+			Thunk = (PIMAGE_THUNK_DATA) PtrFromRva(DosHeader, ImportDescriptor[Index].FirstThunk);
+			OrigThunk = (PIMAGE_THUNK_DATA) PtrFromRva(DosHeader, ImportDescriptor[Index].OriginalFirstThunk);
+
+			for ( ; OrigThunk->u1.Function != NULL; OrigThunk++, Thunk++ )
+			{
+				if ( OrigThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG )
+					continue;
+
+				PIMAGE_IMPORT_BY_NAME import = ( PIMAGE_IMPORT_BY_NAME ) PtrFromRva( DosHeader, OrigThunk->u1.AddressOfData );
+
+				if (strcmp(ImportedProcName, (char*)import->Name) == 0) 
+				{
+					DWORD junk;
+					MEMORY_BASIC_INFORMATION thunkMemInfo;
+
+					VirtualQuery(Thunk, &thunkMemInfo, sizeof(MEMORY_BASIC_INFORMATION)); 
+
+					if (!VirtualProtect(thunkMemInfo.BaseAddress,thunkMemInfo.RegionSize, PAGE_EXECUTE_READWRITE, &thunkMemInfo.Protect))
+						return HRESULT_FROM_WIN32( GetLastError() );
+
+					if ( OldProc )
+						*OldProc = ( PVOID ) ( DWORD ) Thunk->u1.Function;
+	
+					Thunk->u1.Function = (DWORD*)( DWORD ) AlternateProc;
+
+					if ( !VirtualProtect(thunkMemInfo.BaseAddress, thunkMemInfo.RegionSize, thunkMemInfo.Protect, &junk ))
+						return HRESULT_FROM_WIN32( GetLastError() );
+
+					return S_OK;
+				}
+			}
+ 
+			return HRESULT_FROM_WIN32( ERROR_PROC_NOT_FOUND );    
+		}
+	}
+
+	return HRESULT_FROM_WIN32( ERROR_MOD_NOT_FOUND );
+}
+    
+// Only useful as SafeDisc sometimes loops through to find the DLLs real address (rather than the hooked Shim address or IAT jmp)
+DWORD FindRealAddress(const char *szDLLName, const char *szProcName, DWORD dwChangeAddressTo = 0)
 {
 	DWORD ret = -1L;
 	HMODULE lib = LoadLibraryEx(szDLLName, NULL, DONT_RESOLVE_DLL_REFERENCES);
@@ -202,6 +268,13 @@ DWORD FindRealAddress(const char *szDLLName, const char *szProcName)
 		{
 			// TODO: Worry about Ordinalbase ???
 			ret = ((DWORD)lib) + (DWORD)funcs[ords[i]];
+
+			if (dwChangeAddressTo != 0)
+			{
+				DWORD x = funcs[ords[i]];
+				WriteProtectedDWORD((DWORD)&funcs[ords[i]], dwChangeAddressTo - ((DWORD)lib));
+			}
+
 			break;
 		}
 	}
@@ -225,6 +298,23 @@ void EnableDebugPriv()
     AdjustTokenPrivileges(hToken, false, &tkp, sizeof(tkp), NULL, NULL);
  
     CloseHandle(hToken);
+}
+
+void InjectDCEAPIHook(DWORD pid)
+{
+	if (GetFileAttributes("DCEAPIHook.dll") != -1L)
+	{
+		HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+		LPVOID loadLibraryAddr = (LPVOID)GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+		char szPath[MAX_PATH];
+		GetFullPathNameA("DCEAPIHook.dll", MAX_PATH, szPath, NULL);
+		LPVOID newMemory = (LPVOID)VirtualAllocEx(hProcess, NULL, strlen(szPath)+1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		WriteProcessMemory(hProcess, newMemory, szPath, strlen(szPath)+1, NULL);
+		HANDLE hNewThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibraryAddr, newMemory, NULL, NULL);
+		WaitForSingleObject(hNewThread, INFINITE);
+		CloseHandle(hNewThread);
+		CloseHandle(hProcess);
+	}
 }
 
 #endif

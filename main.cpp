@@ -130,23 +130,6 @@ void InjectDrvMgt(DWORD pid)
     CloseHandle(hProcess);
 }
 
-void InjectDCEAPIHook(DWORD pid)
-{
-	if (GetFileAttributes("DCEAPIHook.dll") != -1L)
-	{
-		HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-		LPVOID loadLibraryAddr = (LPVOID)GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
-		char szPath[MAX_PATH];
-		GetFullPathNameA("DCEAPIHook.dll", MAX_PATH, szPath, NULL);
-		LPVOID newMemory = (LPVOID)VirtualAllocEx(hProcess, NULL, strlen(szPath)+1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-		WriteProcessMemory(hProcess, newMemory, szPath, strlen(szPath)+1, NULL);
-		HANDLE hNewThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibraryAddr, newMemory, NULL, NULL);
-		WaitForSingleObject(hNewThread, INFINITE);
-		CloseHandle(hNewThread);
-		CloseHandle(hProcess);
-	}
-}
-
 void InjectAndHope(const char *lpApplicationName, bool bShowPopUp = true)
 {
 	if (!bShowPopUp || MessageBox(NULL, "This does not appear to be a SafeDisc 2.7 or higher executable!\r\n\r\nInject SecDrvEmu.dll Emulation and hope for the best anyway?", "SafeDiscLoader", MB_ICONQUESTION | MB_YESNOCANCEL) == IDYES)
@@ -161,8 +144,6 @@ void InjectAndHope(const char *lpApplicationName, bool bShowPopUp = true)
 			exitlog("Failed to CreateProcess: %s\r\n(ErrCode: %d)\n", lpApplicationName, GetLastError());
 
 		InjectDrvMgt(pi.dwProcessId);
-
-		InjectDCEAPIHook(pi.dwProcessId);
 
 		ResumeThread(pi.hThread);
 
@@ -285,7 +266,7 @@ int main(int argc, char *argv[])
 	//char *szPath = "C:\\Games\\Call of Duty 4 - Modern Warfare\\iw3sp.exe";
 	//char *szPath = "C:\\Games\\BF1942\\BF1942.exe";
 	//char *szPath = "C:\\Games\\HPCOS\\System\\Game.Exe";
-	char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
+	//char *szPath = "C:\\Games\\FIFA 2003\\fifa2003.Exe";
 	//char *szPath = "C:\\Games\\Nightfire\\Bond.exe";
 	//char *szPath = "C:\\Games\\Mafia\\Game.exe";
 	//char *szPath = "C:\\Games\\Need For Speed Underground\\Speed_Orig.exe";
@@ -293,7 +274,10 @@ int main(int argc, char *argv[])
 	//char *szPath = "F:\\Games\\Harry Potter and the Chamber of Secrets\\system\\Game.exe";
 	//char *szPath = "C:\\Games\\Madden NFL 2003\\mainapp.exe";
 	//char *szPath = "C:\\Games\\Kohan\\Kohan.exe";
+	char *szPath = "C:\\Games\\Kohan\\kohan_NoCD_Loader.exe";
+	//char *szPath = "C:\\Games\\Kohan\\Kohan_Deviance1.exe";
 	//char *szPath = "C:\\Games\\Hitman - Codename 47\\Hitman.exe";
+	//char *szPath = "C:\\Games\\Combat Flight Simulator 3\\cfs3.exe";
 #else
 	char szPathBuffer[MAX_PATH];
 	char *szPath = NULL;
