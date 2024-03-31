@@ -1,5 +1,5 @@
 # SafeDiscLoader
- Allows playing SafeDisc (version 2.9 to the latest 4.9) protected games on modern Windows. 
+ Allows playing SafeDisc (version 2.7 to the latest 4.9) protected games on modern Windows. 
 
 # Download
 [Releases](https://github.com/nckstwrt/SafeDiscLoader/releases)
@@ -17,10 +17,16 @@ If a SafeDiscLoader.ini file is found in the same directory as SafeDiscLoader.ex
 You can also use SafeDiscLoader to make SafeDisc utilities work on modern Windows. e.g. Safedisc2Cleaner which can unwrap Safedisc executables below version 2.9.
 
 # Credits
-All credit goes to Reloaded for their Universal SafeDisc Loader and [RibShark](https://twitter.com/RibShark) for his secdrv.sys [SafeDiscShim emulation code](https://github.com/RibShark/SafeDiscShim)
+*  Reloaded for their Universal SafeDisc Loader
+*  [RibShark](https://twitter.com/RibShark) for his secdrv.sys [SafeDiscShim emulation code](https://github.com/RibShark/SafeDiscShim)
+* SafeDisc 2.7 + 2.8 Loader code written by me
+* DiscEmuCheck (DCEHookApi) written by [Luca1991](https://github.com/Luca1991/DiscCheckEmu)
 
 # Background
 I mainly started looking into this as there was no way of playing Football Manager 2005 5.0.5 or Football Manager 2006 6.0.3 on Windows 10 or 11 as there were never any NoCD patches released for these latest versions of the game. Reloaded's SDLoader would run these versions just fine on older Windows versions but failed on Windows 10 and 11. The missing part was the secdrv.sys emulation that RibShark has recently provided as part of his SafeDiscShim. Reloaded's loader assumed secdrv.sys would still be installed and accessible. RibShark's code hooks CreateFile and DeviceIoControl to emulate sysdrv.sys being present and allows Reloaded's loader to do its thing. My code is just a decompiled version of Reloaded's SDLoader that now injects a hooks only version of RibShark's emulation code.
+
+# DiscCheckEmu Support
+Some games also had other CD Checks outside of SafeDisc (normally just checking for a CD having a file or a certain volume name). These checks can be supported by including DCEAPIHook.dll from https://github.com/Luca1991/DiscCheckEmu in the same directory as the game's excutable along with a supporting DCEConfig.yaml. Currently supported Configs/Games can be found at: https://github.com/Luca1991/DCEConfigs/
  
  # Notices
 > [!IMPORTANT]
