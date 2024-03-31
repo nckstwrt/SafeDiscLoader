@@ -14,7 +14,7 @@ That is equivalent to running SafeDiscLoader with the dragged SafeDisc .exe file
 ### Create a SafeDiscLoader.ini file
 If a SafeDiscLoader.ini file is found in the same directory as SafeDiscLoader.exe it will use its contents as if it were commandline arguments passed. i.e. Create a text file called SafeDiscLoader.ini with just `Sims2.exe -w` to load The Sims 2
 ### Using it with non-SafeDisc executables
-You can also use SafeDiscLoader to make SafeDisc utilities work on modern Windows. e.g. Safedisc2Cleaner which can unwrap Safedisc executables below version 2.9.
+You can also use SafeDiscLoader to make SafeDisc utilities work on modern Windows. e.g. Safedisc2Cleaner which can unwrap Safedisc executables below version 2.7.
 
 # Credits
 *  Reloaded for their Universal SafeDisc Loader
