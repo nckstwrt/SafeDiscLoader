@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> **This is now obsolete!** Please use the new and improved version here: [SafeDiscLoader2](https://github.com/nckstwrt/SafeDiscLoader2)  
+> Supports SafeDisc version 2.0 to 4.9 and no longer relies on Reloaded's DLL (which got flagged by some virus checkers)
+
 # SafeDiscLoader
  Allows playing SafeDisc (version 2.7 to the latest 4.9) protected games on modern Windows. 
 
